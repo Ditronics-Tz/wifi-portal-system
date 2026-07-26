@@ -1,0 +1,11 @@
+# Local application credentials. Keep the server copy at /var/www/voucher-portal/config.php.
+/config.php
+
+# Operating-system and editor files
+.DS_Store
+.idea/
+.vscode/
+
+# Runtime data
+/logs/
+/public/uploads/

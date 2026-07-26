@@ -1,0 +1,23 @@
+# Deny access to sensitive directories and files
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteRule ^src/ - [F,L]
+    RewriteRule ^config\.php$ - [F,L]
+    RewriteRule ^migrations/ - [F,L]
+</IfModule>
+
+# Alternative: If not using mod_rewrite
+<FilesMatch "(config\.php|\.htaccess)$">
+    Order allow,deny
+    Deny from all
+</FilesMatch>
+
+<Directory "src">
+    Order allow,deny
+    Deny from all
+</Directory>
+
+<Directory "migrations">
+    Order allow,deny
+    Deny from all
+</Directory>
