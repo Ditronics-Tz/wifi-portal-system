@@ -4,7 +4,7 @@
  * Uses stdin instead of shell string to avoid injection
  */
 
-require_once '/var/www/voucher-portal/config.php';
+require_once dirname(__DIR__) . '/config.php';
 
 /**
  * Send Access-Request to FreeRADIUS via radclient

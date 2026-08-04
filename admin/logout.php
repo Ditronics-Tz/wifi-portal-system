@@ -3,7 +3,7 @@
  * Admin logout
  */
 
-require_once '/var/www/voucher-portal/src/auth.php';
+require_once dirname(__DIR__) . '/src/auth.php';
 
 adminLogout();
 

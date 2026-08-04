@@ -5,7 +5,7 @@
  * Step B: Prepare voucher in DB, auto-submit to AP /portal/auth
  */
 
-require_once '/var/www/voucher-portal/src/voucher_service.php';
+require_once dirname(__DIR__) . '/src/voucher_service.php';
 
 session_start();
 
@@ -61,9 +61,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['voucher_code'])) {
     <div class="container">
         <div class="card">
             <div class="header">
-                <div class="brand-icon">📶</div>
+                <div class="brand-icon"><img src="/assets/ditronics-logo.png" alt="Ditronics"></div>
                 <h1>WiFi Portal</h1>
-                <p class="subtitle">Weka msimbo wako kuingia mtandaoni</p>
+                <p class="subtitle">Weka voucher number ili kutumia mtandao</p>
             </div>
 
             <?php if (!$hasParams): ?>
@@ -123,8 +123,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['voucher_code'])) {
                 </form>
 
                 <div class="info-section">
-                    <p>Huna voucher?</p>
-                    <a href="#" class="info-link" onclick="showHelp(); return false;">Pata voucher hapa</a>
+                    <p>Kama huna voucher, fika ofisini kwa manunuzi.</p>
+                    <a href="status.php" class="info-link">Angalia muda uliobaki</a>
                 </div>
 
                 <?php if ($clientMac): ?>
@@ -132,10 +132,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['voucher_code'])) {
                         <span class="mac-badge"><?= htmlspecialchars($clientMac) ?></span>
                     </div>
                 <?php endif; ?>
-
-                <div style="text-align: center; margin-top: 16px;">
-                    <a href="status.php" class="info-link">Angalia muda uliobaki →</a>
-                </div>
             <?php endif; ?>
         </div>
 
@@ -144,49 +140,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['voucher_code'])) {
         </div>
     </div>
 
-    <!-- Help Modal -->
-    <div id="helpModal" style="display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.5); z-index:1000; align-items:center; justify-content:center; padding:20px;">
-        <div style="background:white; border-radius:16px; padding:32px; max-width:360px; width:100%; text-align:center;">
-            <div style="font-size:48px; margin-bottom:16px;">🎫</div>
-            <h3 style="font-size:20px; font-weight:700; margin-bottom:12px; color:#0f172a;">Jinsi ya Kupata Voucher</h3>
-            <p style="color:#475569; font-size:14px; line-height:1.6; margin-bottom:24px;">
-                Wasiliana na muuza voucher wa karibu ili kununua msimbo wa voucher.
-                Voucher zinapatika kwa bei tofauti:
-            </p>
-            <div style="text-align:left; background:#f8fafc; border-radius:12px; padding:16px; margin-bottom:24px;">
-                <div style="display:flex; justify-content:space-between; padding:10px 0; border-bottom:1px solid #e2e8f0;">
-                    <span style="font-weight:600; color:#0f172a;">Siku 1</span>
-                    <span style="color:#6366f1; font-weight:700;">500 TZS</span>
-                </div>
-                <div style="display:flex; justify-content:space-between; padding:10px 0; border-bottom:1px solid #e2e8f0;">
-                    <span style="font-weight:600; color:#0f172a;">Wiki 1</span>
-                    <span style="color:#6366f1; font-weight:700;">3,000 TZS</span>
-                </div>
-                <div style="display:flex; justify-content:space-between; padding:10px 0;">
-                    <span style="font-weight:600; color:#0f172a;">Mwezi 1</span>
-                    <span style="color:#6366f1; font-weight:700;">10,000 TZS</span>
-                </div>
-            </div>
-            <button onclick="closeHelp()" class="btn btn-secondary" style="width:100%;">Sawa, Nimeelewa</button>
-        </div>
-    </div>
-
     <script>
         document.getElementById('code').addEventListener('input', function() {
             this.value = this.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
-        });
-
-        function showHelp() {
-            var modal = document.getElementById('helpModal');
-            modal.style.display = 'flex';
-        }
-
-        function closeHelp() {
-            document.getElementById('helpModal').style.display = 'none';
-        }
-
-        document.getElementById('helpModal').addEventListener('click', function(e) {
-            if (e.target === this) closeHelp();
         });
     </script>
 </body>

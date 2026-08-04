@@ -13,3 +13,22 @@ define('RADIUS_SECRET', 'replace-with-radius-shared-secret');
 
 define('ADMIN_USERNAME', 'admin');
 define('ADMIN_PASSWORD_HASH', 'replace-with-argon2id-password-hash');
+
+// Session configuration
+define('SESSION_NAME', 'voucher_portal');
+define('SESSION_LIFETIME', 3600);
+
+// Security settings
+define('VOUCHER_CODE_PATTERN', '/^[A-Z0-9]{8,10}$/');
+define('MAX_LOGIN_ATTEMPTS', 5);
+define('LOGIN_LOCKOUT_TIME', 900);
+
+// Seller defaults
+define('SELLER_MAX_GENERATE_QUANTITY', 100);
+
+// Plan definitions
+define('PLANS', [
+    'siku_1' => ['name' => 'Siku 1', 'duration_seconds' => 86400, 'price' => 500],
+    'wiki_1' => ['name' => 'Wiki 1', 'duration_seconds' => 604800, 'price' => 3000],
+    'mwezi_1' => ['name' => 'Mwezi 1', 'duration_seconds' => 2592000, 'price' => 10000],
+]);

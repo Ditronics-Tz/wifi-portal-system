@@ -4,7 +4,7 @@
  * AP handles RADIUS auth directly; PHP only prepares/updates DB state.
  */
 
-require_once '/var/www/voucher-portal/src/db.php';
+require_once dirname(__DIR__) . '/src/db.php';
 
 /**
  * Prepare voucher for AP authentication (DB-only, no RADIUS call).
@@ -25,11 +25,11 @@ function prepareVoucherForAuth(string $code): array {
         $db->beginTransaction();
 
         // Lock row to prevent race conditions
+        // Note: FOR UPDATE is PostgreSQL-specific; SQLite handles concurrency via WAL mode
         $stmt = $db->prepare("
             SELECT id, code, plan_name, duration_seconds, status, first_used_at, expires_at
             FROM vouchers
             WHERE code = :code
-            FOR UPDATE
         ");
         $stmt->execute([':code' => $code]);
         $voucher = $stmt->fetch();
@@ -152,18 +152,41 @@ function getVoucherByCode(string $code): ?array {
 // ─── Admin functions below (unchanged) ────────────────────────────
 
 /**
- * Generate vouchers (admin function).
+ * Generate vouchers and automatically record each as a sale.
+ * Each voucher is immediately marked as sold to the generating seller.
+ *
+ * @param string    $packageName   Package name (display name)
+ * @param int       $durationSec   Duration in seconds
+ * @param float     $price         Price in TZS
+ * @param int       $quantity      Number of vouchers to generate
+ * @param string    $createdBy     Username of the creator
+ * @param int|null  $sellerId      Seller user ID (null for admin-only generation)
+ * @return array                   Array of generated voucher codes
  */
-function generateVouchers(string $planKey, int $quantity, string $createdBy): array {
-    if (!isset(PLANS[$planKey])) {
-        throw new Exception('Invalid plan');
+function generateVouchers(string $packageName, int $durationSec, float $price, int $quantity, string $createdBy, ?int $sellerId = null): array {
+    if (empty($packageName) || $durationSec < 60) {
+        throw new Exception('Package data si sahihi.');
     }
     if ($quantity < 1 || $quantity > 100) {
-        throw new Exception('Invalid quantity');
+        throw new Exception('Idadi lazima iwe 1-100.');
     }
 
-    $plan = PLANS[$planKey];
-    $db   = getDB();
+    // Normalize seller_id: 0 or invalid becomes null
+    if ($sellerId !== null && $sellerId <= 0) {
+        $sellerId = null;
+    }
+
+    // Verify seller exists in DB if provided
+    if ($sellerId !== null) {
+        $db = getDB();
+        $check = $db->prepare("SELECT id FROM users WHERE id = :id AND is_deleted = false");
+        $check->execute([':id' => $sellerId]);
+        if (!$check->fetch()) {
+            $sellerId = null; // Seller not found, treat as admin generation
+        }
+    }
+
+    $db = getDB();
     $generated = [];
 
     try {
@@ -177,31 +200,45 @@ function generateVouchers(string $planKey, int $quantity, string $createdBy): ar
                 $stmt->execute([':code' => $code]);
             } while ($stmt->fetchColumn() > 0);
 
+            // 1. Create voucher
             $stmt = $db->prepare("
-                INSERT INTO vouchers (code, plan_name, duration_seconds, price, status, created_by)
-                VALUES (:code, :plan_name, :duration_seconds, :price, 'unused', :created_by)
+                INSERT INTO vouchers (code, plan_name, duration_seconds, price, status, created_by, seller_id)
+                VALUES (:code, :plan_name, :duration_seconds, :price, 'unused', :created_by, :seller_id)
             ");
             $stmt->execute([
                 ':code'            => $code,
-                ':plan_name'       => $plan['name'],
-                ':duration_seconds'=> $plan['duration_seconds'],
-                ':price'           => $plan['price'],
+                ':plan_name'       => $packageName,
+                ':duration_seconds'=> $durationSec,
+                ':price'           => $price,
                 ':created_by'      => $createdBy,
+                ':seller_id'       => $sellerId,
             ]);
 
-            // radcheck: username=password=code (Cleartext-Password for PAP)
+            // 2. radcheck: username=password=code (Cleartext-Password for PAP)
             $stmt = $db->prepare("
                 INSERT INTO radcheck (username, attribute, op, value)
                 VALUES (:username, 'Cleartext-Password', ':=', :password)
             ");
             $stmt->execute([':username' => $code, ':password' => $code]);
 
-            // radreply: Session-Timeout placeholder
+            // 3. radreply: Session-Timeout placeholder
             $stmt = $db->prepare("
                 INSERT INTO radreply (username, attribute, op, value)
                 VALUES (:username, 'Session-Timeout', ':=', :timeout)
             ");
-            $stmt->execute([':username' => $code, ':timeout' => (string) $plan['duration_seconds']]);
+            $stmt->execute([':username' => $code, ':timeout' => (string) $durationSec]);
+
+            // 4. Auto-record sale (voucher is immediately recorded as sold)
+            $stmt = $db->prepare("
+                INSERT INTO sales (voucher_code, seller_id, plan_name, price, payment_method)
+                VALUES (:voucher_code, :seller_id, :plan_name, :price, 'cash')
+            ");
+            $stmt->execute([
+                ':voucher_code' => $code,
+                ':seller_id'    => $sellerId,
+                ':plan_name'    => $packageName,
+                ':price'        => $price,
+            ]);
 
             $generated[] = $code;
         }
@@ -219,12 +256,19 @@ function generateVouchers(string $planKey, int $quantity, string $createdBy): ar
 
 /**
  * Get all vouchers with optional filters.
+ *
+ * @param string|null $status    Filter by status
+ * @param string|null $search    Search by code
+ * @param int|null    $sellerId  Filter by seller who generated
+ * @param int         $limit
+ * @param int         $offset
+ * @return array
  */
-function getVouchers(?string $status = null, ?string $search = null, int $limit = 100, int $offset = 0): array {
+function getVouchers(?string $status = null, ?string $search = null, ?int $sellerId = null, int $limit = 100, int $offset = 0): array {
     $db = getDB();
 
     $sql = "SELECT id, code, plan_name, duration_seconds, price, status,
-                   created_at, first_used_at, expires_at, created_by
+                   created_at, first_used_at, expires_at, created_by, seller_id
             FROM vouchers WHERE 1=1";
     $params = [];
 
@@ -233,8 +277,12 @@ function getVouchers(?string $status = null, ?string $search = null, int $limit 
         $params[':status'] = $status;
     }
     if ($search) {
-        $sql .= " AND code ILIKE :search";
+        $sql .= " AND code LIKE :search";
         $params[':search'] = '%' . $search . '%';
+    }
+    if ($sellerId !== null) {
+        $sql .= " AND seller_id = :seller_id";
+        $params[':seller_id'] = $sellerId;
     }
 
     $sql .= " ORDER BY created_at DESC LIMIT :limit OFFSET :offset";
@@ -274,7 +322,7 @@ function forceExpireVoucher(string $code): bool {
     $db = getDB();
     $stmt = $db->prepare("
         UPDATE vouchers
-        SET status = 'expired', expires_at = COALESCE(expires_at, NOW())
+        SET status = 'expired', expires_at = COALESCE(expires_at, CURRENT_TIMESTAMP)
         WHERE code = :code AND status != 'expired'
     ");
     $stmt->execute([':code' => $code]);

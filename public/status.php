@@ -4,7 +4,7 @@
  * Accessible at: status.php?code=XXXX
  */
 
-require_once '/var/www/voucher-portal/src/voucher_service.php';
+require_once dirname(__DIR__) . '/src/voucher_service.php';
 
 $code   = isset($_GET['code']) ? strtoupper(trim(preg_replace('/[^A-Za-z0-9]/', '', $_GET['code']))) : '';
 $voucher = null;
@@ -40,7 +40,7 @@ function formatTime(int $seconds): string {
     <div class="container">
         <div class="card status-card">
             <div class="header">
-                <div class="brand-icon">📶</div>
+                <div class="brand-icon"><img src="/assets/ditronics-logo.png" alt="Ditronics"></div>
                 <h1>Hali ya Voucher</h1>
             </div>
 

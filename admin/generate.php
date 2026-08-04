@@ -3,8 +3,8 @@
  * Admin voucher generation page
  */
 
-require_once '/var/www/voucher-portal/src/auth.php';
-require_once '/var/www/voucher-portal/src/voucher_service.php';
+require_once dirname(__DIR__) . '/src/auth.php';
+require_once dirname(__DIR__) . '/src/voucher_service.php';
 
 session_start();
 requireAdmin();

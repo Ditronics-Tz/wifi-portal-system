@@ -3,9 +3,9 @@
  * Admin dashboard — Voucher management + RADIUS test button
  */
 
-require_once '/var/www/voucher-portal/src/auth.php';
-require_once '/var/www/voucher-portal/src/voucher_service.php';
-require_once '/var/www/voucher-portal/src/radius_client.php';
+require_once dirname(__DIR__) . '/src/auth.php';
+require_once dirname(__DIR__) . '/src/voucher_service.php';
+require_once dirname(__DIR__) . '/src/radius_client.php';
 
 session_start();
 requireAdmin();

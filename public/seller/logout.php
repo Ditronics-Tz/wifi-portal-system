@@ -1,6 +1,6 @@
 <?php
 /**
- * Admin logout
+ * Seller Logout
  */
 
 require_once dirname(__DIR__, 2) . '/src/auth.php';

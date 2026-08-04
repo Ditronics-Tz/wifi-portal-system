@@ -1,13 +1,30 @@
-# Deny access to sensitive directories and files
+# Security: Block access to sensitive files and directories
+
 <IfModule mod_rewrite.c>
     RewriteEngine On
+
+    # Block access to hidden files (.git, .env, etc.)
+    RewriteRule (^|/)\. - [F,L]
+
+    # Block access to sensitive directories
     RewriteRule ^src/ - [F,L]
-    RewriteRule ^config\.php$ - [F,L]
+    RewriteRule ^data/ - [F,L]
     RewriteRule ^migrations/ - [F,L]
+    RewriteRule ^admin/ - [F,L]
+    RewriteRule ^tests/ - [F,L]
+
+    # Block access to sensitive files
+    RewriteRule ^config\.php$ - [F,L]
+    RewriteRule ^config\.example\.php$ - [F,L]
+    RewriteRule ^router\.php$ - [F,L]
+    RewriteRule ^deploy\.sh$ - [F,L]
+    RewriteRule ^\.htaccess$ - [F,L]
+    RewriteRule ^README\.md$ - [F,L]
+    RewriteRule ^wifi_voucher.*\.md$ - [F,L]
 </IfModule>
 
-# Alternative: If not using mod_rewrite
-<FilesMatch "(config\.php|\.htaccess)$">
+# Block access to sensitive files (fallback for non-mod_rewrite)
+<FilesMatch "^(\.htaccess|config\.php|config\.example\.php|router\.php|deploy\.sh)$">
     Order allow,deny
     Deny from all
 </FilesMatch>
@@ -17,7 +34,29 @@
     Deny from all
 </Directory>
 
+<Directory "data">
+    Order allow,deny
+    Deny from all
+</Directory>
+
 <Directory "migrations">
     Order allow,deny
     Deny from all
 </Directory>
+
+# Security headers
+<IfModule mod_headers.c>
+    Header always set X-Content-Type-Options "nosniff"
+    Header always set X-Frame-Options "DENY"
+    Header always set X-XSS-Protection "1; mode=block"
+    Header always set Referrer-Policy "strict-origin-when-cross-origin"
+    Header always set Permissions-Policy "camera=(), microphone=(), geolocation=()"
+    Header always set Cross-Origin-Opener-Policy "same-origin"
+    Header always set Cross-Origin-Resource-Policy "same-origin"
+    Header unset X-Powered-By
+</IfModule>
+
+# Prevent PHP version exposure
+<IfModule mod_php.c>
+    php_flag expose_php Off
+</IfModule>
