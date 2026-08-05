@@ -83,6 +83,7 @@ $sensitivePatterns = [
     '/src/',
     '/migrations/',
     '/data/',
+    '/admin/',           // Old v1 admin directory — blocked
     '/deploy.sh',
     '/router.php',
     '/README.md',
