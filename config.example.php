@@ -18,6 +18,9 @@ define('ADMIN_PASSWORD_HASH', 'replace-with-argon2id-password-hash');
 define('SESSION_NAME', 'voucher_portal');
 define('SESSION_LIFETIME', 3600);
 
+// Set to true only once this site is served over HTTPS.
+define('SESSION_COOKIE_SECURE', false);
+
 // Security settings
 define('VOUCHER_CODE_PATTERN', '/^[A-Z0-9]{8,10}$/');
 define('MAX_LOGIN_ATTEMPTS', 5);

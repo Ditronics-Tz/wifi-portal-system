@@ -4,6 +4,9 @@
 .idea/
 .vscode/
 
+# Secrets — never commit
+/config.php
+
 # Runtime data
 /logs/
 /public/uploads/

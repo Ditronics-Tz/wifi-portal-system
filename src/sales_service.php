@@ -575,7 +575,7 @@ function getRecentSales(int $limit = 10): array {
     $stmt = $db->prepare("
         SELECT s.*, u.username AS seller_username, u.full_name AS seller_full_name, v.status AS voucher_status
         FROM sales s
-        LEFT LEFT JOIN users u ON s.seller_id = u.id
+        LEFT JOIN users u ON s.seller_id = u.id
         LEFT JOIN vouchers v ON s.voucher_code = v.code
         ORDER BY s.sold_at DESC
         LIMIT :limit

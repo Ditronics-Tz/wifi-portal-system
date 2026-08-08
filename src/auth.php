@@ -20,7 +20,7 @@ function startAppSession(): void {
 
         // Secure session settings
         ini_set('session.cookie_httponly', '1');
-        ini_set('session.cookie_secure', '0');   // Set to 1 if using HTTPS
+        ini_set('session.cookie_secure', (defined('SESSION_COOKIE_SECURE') && SESSION_COOKIE_SECURE) ? '1' : '0');
         ini_set('session.cookie_samesite', 'Strict');
         ini_set('session.use_strict_mode', '1');
         ini_set('session.use_only_cookies', '1');

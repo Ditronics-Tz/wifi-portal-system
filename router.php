@@ -111,7 +111,11 @@ foreach ($pathParts as $part) {
 // ── Secure Session Cookies ───────────────────────────────────────
 // These will be applied when session_start() is called in auth.php
 ini_set('session.cookie_httponly', '1');
-ini_set('session.cookie_secure', '0');    // Set to 1 if using HTTPS
+$configFile = $baseDir . '/config.php';
+if (is_file($configFile)) {
+    require_once $configFile;
+}
+ini_set('session.cookie_secure', (defined('SESSION_COOKIE_SECURE') && SESSION_COOKIE_SECURE) ? '1' : '0');
 ini_set('session.cookie_samesite', 'Strict');
 ini_set('session.use_strict_mode', '1');
 ini_set('session.use_only_cookies', '1');
