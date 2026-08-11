@@ -40,6 +40,8 @@ function fmtDuration(int $s): string {
     if ($s < 86400) return round($s / 3600) . ' saa';
     return round($s / 86400) . ' siku';
 }
+$activePage = 'generate';
+$pageTitle = 'Generate';
 ?>
 <!DOCTYPE html>
 <html lang="sw">
@@ -47,28 +49,11 @@ function fmtDuration(int $s): string {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Generate - Admin</title>
+    <?php require dirname(__DIR__, 2) . '/src/theme_init.php'; ?>
     <link rel="stylesheet" href="/assets/style.css">
 </head>
 <body>
-    <div class="admin-wrapper">
-        <header class="admin-header">
-            <div class="admin-header-inner">
-                <a href="/admin/dashboard.php" class="admin-logo"><img src="/assets/DITRONICS-COMPANY-LOGO.png" alt="Ditronics" style="height:28px;width:auto;"><span class="admin-logo-text">WiFi Voucher Admin</span></a>
-                <nav class="admin-nav">
-                    <a href="/admin/dashboard.php">Dashboard</a>
-                    <a href="/admin/sellers.php">Sellers</a>
-                    <a href="/admin/packages.php">Packages</a>
-                    <a href="/admin/analytics.php">Analytics</a>
-                    <a href="/admin/generate.php" class="active">Generate</a>
-                </nav>
-                <div class="admin-user">
-                    <div class="admin-user-avatar"><?php echo strtoupper(substr($_SESSION['admin_username'] ?? 'A', 0, 1)); ?></div>
-                    <span><?php echo htmlspecialchars($_SESSION['admin_username'] ?? 'Admin'); ?></span>
-                    <a href="/admin/logout.php" style="color: var(--text-tertiary); text-decoration: none; font-size: var(--text-xs);">Toka</a>
-                </div>
-            </div>
-        </header>
-        <main class="admin-content">
+<?php require dirname(__DIR__, 2) . '/src/admin_header.php'; ?>
             <div class="section-header">
                 <h1>Tengeneza Voucher</h1>
                 <p>Tengeneza voucher mpya kwa ajili ya packages zilizopo.</p>
@@ -143,7 +128,6 @@ function fmtDuration(int $s): string {
                     </table>
                 </div>
             </div>
-        </main>
-    </div>
+<?php require dirname(__DIR__, 2) . '/src/admin_footer.php'; ?>
 </body>
 </html>

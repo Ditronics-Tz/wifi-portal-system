@@ -5,7 +5,6 @@ startAppSession();
 requireAdmin();
 
 $adminUserId = getCurrentUserId() ?: null;
-$adminUsername = getCurrentUsername();
 $message = null;
 $error = null;
 
@@ -92,6 +91,8 @@ function formatDuration(int $seconds): string {
     if ($seconds < 86400) return round($seconds / 3600) . ' saa';
     return round($seconds / 86400) . ' siku';
 }
+$activePage = 'packages';
+$pageTitle = 'Packages';
 ?>
 <!DOCTYPE html>
 <html lang="sw">
@@ -99,28 +100,11 @@ function formatDuration(int $seconds): string {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Packages - Admin</title>
+    <?php require dirname(__DIR__, 2) . '/src/theme_init.php'; ?>
     <link rel="stylesheet" href="/assets/style.css">
 </head>
 <body>
-    <div class="admin-wrapper">
-        <header class="admin-header">
-            <div class="admin-header-inner">
-                <a href="/admin/dashboard.php" class="admin-logo"><img src="/assets/DITRONICS-COMPANY-LOGO.png" alt="Ditronics" style="height:28px;width:auto;"><span class="admin-logo-text">WiFi Voucher Admin</span></a>
-                <nav class="admin-nav">
-                    <a href="/admin/dashboard.php">Dashboard</a>
-                    <a href="/admin/sellers.php">Sellers</a>
-                    <a href="/admin/packages.php" class="active">Packages</a>
-                    <a href="/admin/analytics.php">Analytics</a>
-                    <a href="/admin/generate.php">Generate</a>
-                </nav>
-                <div class="admin-user">
-                    <div class="admin-user-avatar"><?php echo strtoupper(substr($adminUsername, 0, 1)); ?></div>
-                    <span><?php echo htmlspecialchars($adminUsername); ?></span>
-                    <a href="/admin/logout.php" style="color: var(--text-tertiary); text-decoration: none; font-size: var(--text-xs);">Toka</a>
-                </div>
-            </div>
-        </header>
-        <main class="admin-content">
+<?php require dirname(__DIR__, 2) . '/src/admin_header.php'; ?>
             <div class="section-header">
                 <h1>Package Management</h1>
                 <p>Simamia packages za WiFi ambazo sellers watazitumia kutengeneza voucher.</p>
@@ -287,8 +271,7 @@ function formatDuration(int $seconds): string {
                     </div>
                 <?php endif; ?>
             </div>
-        </main>
-    </div>
+<?php require dirname(__DIR__, 2) . '/src/admin_footer.php'; ?>
 
     <!-- Edit Modal -->
     <div id="editModal" class="modal-overlay">

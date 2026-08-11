@@ -7,7 +7,6 @@ require_once dirname(__DIR__, 2) . '/src/package_service.php';
 startAppSession();
 requireAdmin();
 
-$adminUsername = getCurrentUsername();
 $statusFilter = $_GET['status'] ?? '';
 $search = trim($_GET['search'] ?? '');
 $sellerFilter = isset($_GET['seller_id']) ? intval($_GET['seller_id']) : null;
@@ -30,6 +29,8 @@ $sellerList = getSellers(null, true, 100, 0);
 $pkgStats = getPackageStats();
 $pkgPopularity = getPackagePopularity();
 $sellerPerf = getSalesBySeller();
+$activePage = 'dashboard';
+$pageTitle = 'Dashboard';
 ?>
 <!DOCTYPE html>
 <html lang="sw">
@@ -37,28 +38,11 @@ $sellerPerf = getSalesBySeller();
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dashboard - Admin</title>
+    <?php require dirname(__DIR__, 2) . '/src/theme_init.php'; ?>
     <link rel="stylesheet" href="/assets/style.css">
 </head>
 <body>
-    <div class="admin-wrapper">
-        <header class="admin-header">
-            <div class="admin-header-inner">
-                <a href="/admin/dashboard.php" class="admin-logo"><img src="/assets/DITRONICS-COMPANY-LOGO.png" alt="Ditronics" style="height:28px;width:auto;"><span class="admin-logo-text">WiFi Voucher Admin</span></a>
-                <nav class="admin-nav">
-                    <a href="/admin/dashboard.php" class="active">Dashboard</a>
-                    <a href="/admin/sellers.php">Sellers</a>
-                    <a href="/admin/packages.php">Packages</a>
-                    <a href="/admin/analytics.php">Analytics</a>
-                    <a href="/admin/generate.php">Generate</a>
-                </nav>
-                <div class="admin-user">
-                    <div class="admin-user-avatar"><?php echo strtoupper(substr($adminUsername, 0, 1)); ?></div>
-                    <span><?php echo htmlspecialchars($adminUsername); ?></span>
-                    <a href="/admin/logout.php" style="color: var(--text-tertiary); text-decoration: none; font-size: var(--text-xs);">Toka</a>
-                </div>
-            </div>
-        </header>
-        <main class="admin-content">
+<?php require dirname(__DIR__, 2) . '/src/admin_header.php'; ?>
             <div class="section-header">
                 <h1>Dashboard</h1>
                 <p>Muhtasari wa mfumo wote — mauzo, sellers, packages, na voucher.</p>
@@ -308,7 +292,6 @@ $sellerPerf = getSalesBySeller();
                 </div>
                 <?php endif; ?>
             </div>
-        </main>
-    </div>
+<?php require dirname(__DIR__, 2) . '/src/admin_footer.php'; ?>
 </body>
 </html>

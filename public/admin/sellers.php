@@ -52,6 +52,8 @@ $totalSellers = countSellers($search ?: null, $activeFilter);
 $totalPages = ceil($totalSellers / $perPage);
 $summaryStats = getSellerSummaryStats();
 $csrf = generateCSRFToken();
+$activePage = 'sellers';
+$pageTitle = 'Sellers';
 ?>
 <!DOCTYPE html>
 <html lang="sw">
@@ -59,28 +61,11 @@ $csrf = generateCSRFToken();
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Sellers - Admin</title>
+    <?php require dirname(__DIR__, 2) . '/src/theme_init.php'; ?>
     <link rel="stylesheet" href="/assets/style.css">
 </head>
 <body>
-    <div class="admin-wrapper">
-        <header class="admin-header">
-            <div class="admin-header-inner">
-                <a href="/admin/dashboard.php" class="admin-logo"><img src="/assets/DITRONICS-COMPANY-LOGO.png" alt="Ditronics" style="height:28px;width:auto;"><span class="admin-logo-text">WiFi Voucher Admin</span></a>
-                <nav class="admin-nav">
-                    <a href="/admin/dashboard.php">Dashboard</a>
-                    <a href="/admin/sellers.php" class="active">Sellers</a>
-                    <a href="/admin/packages.php">Packages</a>
-                    <a href="/admin/analytics.php">Analytics</a>
-                    <a href="/admin/generate.php">Generate</a>
-                </nav>
-                <div class="admin-user">
-                    <div class="admin-user-avatar"><?php echo strtoupper(substr($adminUsername, 0, 1)); ?></div>
-                    <span><?php echo htmlspecialchars($adminUsername); ?></span>
-                    <a href="/admin/logout.php" style="color: var(--text-tertiary); text-decoration: none; font-size: var(--text-xs);">Toka</a>
-                </div>
-            </div>
-        </header>
-        <main class="admin-content">
+<?php require dirname(__DIR__, 2) . '/src/admin_header.php'; ?>
             <?php if ($message): ?><div class="alert alert-success"><span><?php echo htmlspecialchars($message); ?></span></div><?php endif; ?>
             <?php if ($error): ?><div class="alert alert-error"><span><?php echo htmlspecialchars($error); ?></span></div><?php endif; ?>
 
@@ -159,11 +144,10 @@ $csrf = generateCSRFToken();
                 </div>
                 <?php endif; ?>
             </div>
-        </main>
-    </div>
+<?php require dirname(__DIR__, 2) . '/src/admin_footer.php'; ?>
 
     <div id="passwordModal" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.4); z-index: 1000; align-items: center; justify-content: center; padding: var(--space-5);">
-        <div style="background: white; border-radius: var(--radius-lg); padding: var(--space-6); max-width: 400px; width: 100%; border: 1px solid var(--border-default);">
+        <div style="background: var(--surface-raised); border-radius: var(--radius-lg); padding: var(--space-6); max-width: 400px; width: 100%; border: 1px solid var(--border-default);">
             <h3 style="font-size: var(--text-md); font-weight: 600; margin-bottom: var(--space-4);">Badilisha Nywila — <span id="modalSellerName"></span></h3>
             <form method="POST" action="">
                 <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($csrf); ?>">

@@ -5,7 +5,6 @@ require_once dirname(__DIR__, 2) . '/src/user_service.php';
 startAppSession();
 requireAdmin();
 
-$adminUsername = getCurrentUsername();
 $dateFrom = $_GET['date_from'] ?? '';
 $dateTo = $_GET['date_to'] ?? '';
 $days = intval($_GET['days'] ?? 30);
@@ -25,6 +24,8 @@ $dailyTrend = getDailySalesTrend($days);
 $buyerStats = getUniqueBuyerCount();
 $recentSales = getRecentSales(10);
 $sellerSummary = getSellerSummaryStats();
+$activePage = 'analytics';
+$pageTitle = 'Analytics';
 ?>
 <!DOCTYPE html>
 <html lang="sw">
@@ -32,28 +33,11 @@ $sellerSummary = getSellerSummaryStats();
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Analytics - Admin</title>
+    <?php require dirname(__DIR__, 2) . '/src/theme_init.php'; ?>
     <link rel="stylesheet" href="/assets/style.css">
 </head>
 <body>
-    <div class="admin-wrapper">
-        <header class="admin-header">
-            <div class="admin-header-inner">
-                <a href="/admin/dashboard.php" class="admin-logo"><img src="/assets/DITRONICS-COMPANY-LOGO.png" alt="Ditronics" style="height:28px;width:auto;"><span class="admin-logo-text">WiFi Voucher Admin</span></a>
-                <nav class="admin-nav">
-                    <a href="/admin/dashboard.php">Dashboard</a>
-                    <a href="/admin/sellers.php">Sellers</a>
-                    <a href="/admin/packages.php">Packages</a>
-                    <a href="/admin/analytics.php" class="active">Analytics</a>
-                    <a href="/admin/generate.php">Generate</a>
-                </nav>
-                <div class="admin-user">
-                    <div class="admin-user-avatar"><?php echo strtoupper(substr($adminUsername, 0, 1)); ?></div>
-                    <span><?php echo htmlspecialchars($adminUsername); ?></span>
-                    <a href="/admin/logout.php" style="color: var(--text-tertiary); text-decoration: none; font-size: var(--text-xs);">Toka</a>
-                </div>
-            </div>
-        </header>
-        <main class="admin-content">
+<?php require dirname(__DIR__, 2) . '/src/admin_header.php'; ?>
             <!-- Date Filter -->
             <div class="admin-card">
                 <div style="display: flex; gap: var(--space-2); flex-wrap: wrap; align-items: center;">
@@ -169,7 +153,6 @@ $sellerSummary = getSellerSummaryStats();
                 </div>
                 <?php endif; ?>
             </div>
-        </main>
-    </div>
+<?php require dirname(__DIR__, 2) . '/src/admin_footer.php'; ?>
 </body>
 </html>
