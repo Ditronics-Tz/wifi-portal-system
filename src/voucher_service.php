@@ -5,15 +5,20 @@
  */
 
 require_once dirname(__DIR__) . '/src/db.php';
+require_once dirname(__DIR__) . '/src/session_service.php';
+require_once dirname(__DIR__) . '/src/package_service.php';
+require_once dirname(__DIR__) . '/src/radius_client.php';
 
 /**
  * Prepare voucher for AP authentication (DB-only, no RADIUS call).
  * Called BEFORE the auto-submit form sends credentials to AP.
  *
- * @param string $code Voucher code
- * @return array ['status' => 'ok'|'invalid'|'expired']
+ * @param string      $code      Voucher code
+ * @param string|null $clientMac Device MAC reported by the AP for this attempt
+ * @param string|null $clientIp  Client IP if the portal can see it
+ * @return array ['status' => 'ok'|'invalid'|'expired'|'in_use']
  */
-function prepareVoucherForAuth(string $code): array {
+function prepareVoucherForAuth(string $code, ?string $clientMac = null, ?string $clientIp = null): array {
     // Validate code format
     if (!preg_match(VOUCHER_CODE_PATTERN, $code)) {
         return ['status' => 'invalid'];
@@ -27,9 +32,10 @@ function prepareVoucherForAuth(string $code): array {
         // Lock row to prevent race conditions
         // Note: FOR UPDATE is PostgreSQL-specific; SQLite handles concurrency via WAL mode
         $stmt = $db->prepare("
-            SELECT id, code, plan_name, duration_seconds, status, first_used_at, expires_at
+            SELECT id, code, plan_name, duration_seconds, status, first_used_at, expires_at, first_mac
             FROM vouchers
             WHERE code = :code
+            FOR UPDATE
         ");
         $stmt->execute([':code' => $code]);
         $voucher = $stmt->fetch();
@@ -37,12 +43,14 @@ function prepareVoucherForAuth(string $code): array {
         // 1. Not found
         if (!$voucher) {
             $db->rollBack();
+            recordSecurityEvent('INVALID_VOUCHER', 'low', $code, null, ['mac' => $clientMac]);
             return ['status' => 'invalid'];
         }
 
         // 2. Already expired
         if ($voucher['status'] === 'expired') {
             $db->commit();
+            recordSecurityEvent('EXPIRED_VOUCHER', 'info', $code);
             return ['status' => 'expired'];
         }
 
@@ -53,41 +61,68 @@ function prepareVoucherForAuth(string $code): array {
         if ($voucher['status'] === 'active' && $expiresAt !== null && $expiresAt <= $now) {
             $stmt = $db->prepare("UPDATE vouchers SET status = 'expired' WHERE id = :id");
             $stmt->execute([':id' => $voucher['id']]);
+            closeVoucherSessions((int) $voucher['id'], 'expired');
             $db->commit();
+            recordSecurityEvent('EXPIRED_VOUCHER', 'info', $code);
             return ['status' => 'expired'];
         }
 
-        // 4. Unused → first use: set timers
+        // 4. Unused → first use: set timers, open session, bind MAC as a hint
         if ($voucher['status'] === 'unused') {
             $firstUsedAt = date('Y-m-d H:i:s');
-            $expiresAt   = date('Y-m-d H:i:s', $now + $voucher['duration_seconds']);
+            $expiresAtTs = date('Y-m-d H:i:s', $now + $voucher['duration_seconds']);
 
             $stmt = $db->prepare("
                 UPDATE vouchers
                 SET status       = 'active',
                     first_used_at = :first_used_at,
-                    expires_at    = :expires_at
+                    expires_at    = :expires_at,
+                    first_mac     = :first_mac
                 WHERE id = :id
             ");
             $stmt->execute([
                 ':first_used_at' => $firstUsedAt,
-                ':expires_at'    => $expiresAt,
+                ':expires_at'    => $expiresAtTs,
+                ':first_mac'     => $clientMac,
                 ':id'            => $voucher['id'],
             ]);
 
-            // Set full duration in radreply
-            updateRadreplySessionTimeout($code, $voucher['duration_seconds']);
+            applyVoucherRadiusPolicy($code, $voucher['plan_name'], $voucher['duration_seconds']);
+            $sessionId = upsertVoucherSession((int) $voucher['id'], $clientMac, $clientIp, $expiresAtTs);
 
             $db->commit();
+            recordSecurityEvent('SESSION_STARTED', 'info', $code, $sessionId, ['mac' => $clientMac, 'ip' => $clientIp]);
             return ['status' => 'ok'];
         }
 
-        // 5. Active, not expired → reconnect mid-voucher
+        // 5. Active, not expired → reconnect or reject other device
         if ($voucher['status'] === 'active' && $expiresAt !== null && $expiresAt > $now) {
-            $remaining = $expiresAt - $now;
+            $policy = evaluateDevicePolicy($voucher, $clientMac);
+            if (!$policy['ok']) {
+                $db->commit();
+                $eventType = ($policy['reason'] ?? '') === 'session_other_device' ? 'SESSION_LIMIT' : 'VOUCHER_REUSE';
+                recordSecurityEvent($eventType, 'high', $code, null, [
+                    'mac'        => $clientMac,
+                    'bound_mac'  => $voucher['first_mac'],
+                    'reason'     => $policy['reason'] ?? 'blocked',
+                ]);
+                return ['status' => 'in_use'];
+            }
 
-            // Update radreply with remaining time
-            updateRadreplySessionTimeout($code, $remaining);
+            $remaining = $expiresAt - $now;
+            applyVoucherRadiusPolicy($code, $voucher['plan_name'], $remaining);
+
+            if ($voucher['first_mac'] === null && $clientMac) {
+                $stmt = $db->prepare("UPDATE vouchers SET first_mac = :mac WHERE id = :id");
+                $stmt->execute([':mac' => $clientMac, ':id' => $voucher['id']]);
+            }
+
+            $sessionId = upsertVoucherSession(
+                (int) $voucher['id'],
+                $clientMac,
+                $clientIp,
+                date('Y-m-d H:i:s', $expiresAt)
+            );
 
             $db->commit();
             return ['status' => 'ok'];
@@ -107,35 +142,110 @@ function prepareVoucherForAuth(string $code): array {
 }
 
 /**
- * Update radreply Session-Timeout for a user (upsert).
+ * Look up an active, non-expired voucher already bound to this device,
+ * so it can be silently re-submitted without asking the user to retype it.
  */
-function updateRadreplySessionTimeout(string $username, int $timeout): void {
+function getActiveVoucherForMac(string $clientMac): ?string {
     $db = getDB();
+    $stmt = $db->prepare("
+        SELECT v.code
+        FROM voucher_sessions s
+        JOIN vouchers v ON v.id = s.voucher_id
+        WHERE s.client_mac = :mac
+          AND s.status = 'active'
+          AND v.status = 'active'
+          AND v.expires_at > NOW()
+        ORDER BY s.last_seen_at DESC
+        LIMIT 1
+    ");
+    $stmt->execute([':mac' => $clientMac]);
+    $code = $stmt->fetchColumn();
+    if ($code) {
+        return $code;
+    }
 
     $stmt = $db->prepare("
-        SELECT id FROM radreply
-        WHERE username = :username AND attribute = 'Session-Timeout'
+        SELECT code FROM vouchers
+        WHERE first_mac = :mac AND status = 'active' AND expires_at > NOW()
+        ORDER BY expires_at DESC
+        LIMIT 1
     ");
-    $stmt->execute([':username' => $username]);
+    $stmt->execute([':mac' => $clientMac]);
+    $code = $stmt->fetchColumn();
+    return $code ?: null;
+}
+
+/**
+ * Admin action: unbind a voucher from its current device (lost/broken phone, etc.)
+ * so the same code can be redeemed again on a new device without losing
+ * remaining time.
+ */
+function releaseVoucherDevice(string $code): bool {
+    $db = getDB();
+    $stmt = $db->prepare("SELECT id FROM vouchers WHERE code = :code AND status = 'active'");
+    $stmt->execute([':code' => $code]);
+    $voucherId = $stmt->fetchColumn();
+    if (!$voucherId) {
+        return false;
+    }
+
+    closeVoucherSessions((int) $voucherId, 'admin_release');
+    $stmt = $db->prepare("UPDATE vouchers SET first_mac = NULL WHERE id = :id");
+    $stmt->execute([':id' => $voucherId]);
+    recordSecurityEvent('DEVICE_RELEASED', 'info', $code);
+    return true;
+}
+
+function upsertRadAttribute(string $table, string $username, string $attribute, string $value, string $op = ':='): void {
+    $db = getDB();
+    $allowed = ['radcheck', 'radreply'];
+    if (!in_array($table, $allowed, true)) {
+        throw new InvalidArgumentException('Invalid RADIUS table');
+    }
+
+    $stmt = $db->prepare("SELECT id FROM {$table} WHERE username = :username AND attribute = :attribute");
+    $stmt->execute([':username' => $username, ':attribute' => $attribute]);
     $existing = $stmt->fetch();
 
     if ($existing) {
-        $stmt = $db->prepare("
-            UPDATE radreply
-            SET value = :value
-            WHERE username = :username AND attribute = 'Session-Timeout'
-        ");
-    } else {
-        $stmt = $db->prepare("
-            INSERT INTO radreply (username, attribute, op, value)
-            VALUES (:username, 'Session-Timeout', ':=', :value)
-        ");
+        $stmt = $db->prepare("UPDATE {$table} SET value = :value, op = :op WHERE id = :id");
+        $stmt->execute([':value' => $value, ':op' => $op, ':id' => $existing['id']]);
+        return;
     }
 
+    $stmt = $db->prepare("INSERT INTO {$table} (username, attribute, op, value) VALUES (:username, :attribute, :op, :value)");
     $stmt->execute([
-        ':username' => $username,
-        ':value'    => (string) $timeout,
+        ':username'  => $username,
+        ':attribute' => $attribute,
+        ':op'        => $op,
+        ':value'     => $value,
     ]);
+}
+
+/**
+ * Session-Timeout, Simultaneous-Use, and package bandwidth/quota in RADIUS.
+ */
+function applyVoucherRadiusPolicy(string $username, string $planName, int $timeoutSeconds): void {
+    upsertRadAttribute('radreply', $username, 'Session-Timeout', (string) max(1, $timeoutSeconds));
+    upsertRadAttribute('radcheck', $username, 'Simultaneous-Use', '1', ':=');
+
+    $pkg = getPackageByName($planName);
+    if (!$pkg) {
+        return;
+    }
+
+    $mbps = isset($pkg['bandwidth_mbps']) ? (int) $pkg['bandwidth_mbps'] : 0;
+    if ($mbps > 0) {
+        $bps = (string) ($mbps * 1000000);
+        upsertRadAttribute('radreply', $username, 'WISPr-Bandwidth-Max-Down', $bps);
+        upsertRadAttribute('radreply', $username, 'WISPr-Bandwidth-Max-Up', $bps);
+    }
+
+    $quotaMb = isset($pkg['data_quota_mb']) ? (int) $pkg['data_quota_mb'] : 0;
+    if ($quotaMb > 0) {
+        $octets = (string) ($quotaMb * 1024 * 1024);
+        upsertRadAttribute('radreply', $username, 'ChilliSpot-Max-Total-Octets', $octets);
+    }
 }
 
 /**
@@ -152,8 +262,8 @@ function getVoucherByCode(string $code): ?array {
 // ─── Admin functions below (unchanged) ────────────────────────────
 
 /**
- * Generate vouchers and automatically record each as a sale.
- * Each voucher is immediately marked as sold to the generating seller.
+ * Generate vouchers as unsold stock. Generating a voucher is NOT a sale —
+ * a sale is only recorded when someone explicitly records it on the Sales page.
  *
  * @param string    $packageName   Package name (display name)
  * @param int       $durationSec   Duration in seconds
@@ -165,10 +275,10 @@ function getVoucherByCode(string $code): ?array {
  */
 function generateVouchers(string $packageName, int $durationSec, float $price, int $quantity, string $createdBy, ?int $sellerId = null): array {
     if (empty($packageName) || $durationSec < 60) {
-        throw new Exception('Package data si sahihi.');
+        throw new Exception('Invalid package data.');
     }
     if ($quantity < 1 || $quantity > 100) {
-        throw new Exception('Idadi lazima iwe 1-100.');
+        throw new Exception('Quantity must be 1-100.');
     }
 
     // Normalize seller_id: 0 or invalid becomes null
@@ -221,24 +331,7 @@ function generateVouchers(string $packageName, int $durationSec, float $price, i
             ");
             $stmt->execute([':username' => $code, ':password' => $code]);
 
-            // 3. radreply: Session-Timeout placeholder
-            $stmt = $db->prepare("
-                INSERT INTO radreply (username, attribute, op, value)
-                VALUES (:username, 'Session-Timeout', ':=', :timeout)
-            ");
-            $stmt->execute([':username' => $code, ':timeout' => (string) $durationSec]);
-
-            // 4. Auto-record sale (voucher is immediately recorded as sold)
-            $stmt = $db->prepare("
-                INSERT INTO sales (voucher_code, seller_id, plan_name, price, payment_method)
-                VALUES (:voucher_code, :seller_id, :plan_name, :price, 'cash')
-            ");
-            $stmt->execute([
-                ':voucher_code' => $code,
-                ':seller_id'    => $sellerId,
-                ':plan_name'    => $packageName,
-                ':price'        => $price,
-            ]);
+            applyVoucherRadiusPolicy($code, $packageName, $durationSec);
 
             $generated[] = $code;
         }
@@ -255,21 +348,23 @@ function generateVouchers(string $packageName, int $durationSec, float $price, i
 }
 
 /**
- * Get all vouchers with optional filters.
+ * Get all vouchers with optional filters. Expired vouchers are always
+ * excluded from the results — they are never shown in admin voucher lists.
  *
- * @param string|null $status    Filter by status
+ * @param string|null $status    Filter by status (unused|active)
  * @param string|null $search    Search by code
  * @param int|null    $sellerId  Filter by seller who generated
+ * @param string|null $planName  Filter by package/plan name
  * @param int         $limit
  * @param int         $offset
  * @return array
  */
-function getVouchers(?string $status = null, ?string $search = null, ?int $sellerId = null, int $limit = 100, int $offset = 0): array {
+function getVouchers(?string $status = null, ?string $search = null, ?int $sellerId = null, ?string $planName = null, int $limit = 100, int $offset = 0): array {
     $db = getDB();
 
     $sql = "SELECT id, code, plan_name, duration_seconds, price, status,
-                   created_at, first_used_at, expires_at, created_by, seller_id
-            FROM vouchers WHERE 1=1";
+                   created_at, first_used_at, expires_at, created_by, seller_id, first_mac
+            FROM vouchers WHERE status != 'expired'";
     $params = [];
 
     if ($status) {
@@ -283,6 +378,10 @@ function getVouchers(?string $status = null, ?string $search = null, ?int $selle
     if ($sellerId !== null) {
         $sql .= " AND seller_id = :seller_id";
         $params[':seller_id'] = $sellerId;
+    }
+    if ($planName) {
+        $sql .= " AND plan_name = :plan_name";
+        $params[':plan_name'] = $planName;
     }
 
     $sql .= " ORDER BY created_at DESC LIMIT :limit OFFSET :offset";
@@ -320,11 +419,21 @@ function countVouchersByStatus(): array {
  */
 function forceExpireVoucher(string $code): bool {
     $db = getDB();
+    $stmt = $db->prepare("SELECT id FROM vouchers WHERE code = :code AND status != 'expired'");
+    $stmt->execute([':code' => $code]);
+    $voucherId = $stmt->fetchColumn();
+    if (!$voucherId) {
+        return false;
+    }
+
     $stmt = $db->prepare("
         UPDATE vouchers
         SET status = 'expired', expires_at = COALESCE(expires_at, CURRENT_TIMESTAMP)
-        WHERE code = :code AND status != 'expired'
+        WHERE id = :id
     ");
-    $stmt->execute([':code' => $code]);
-    return $stmt->rowCount() > 0;
+    $stmt->execute([':id' => $voucherId]);
+    closeVoucherSessions((int) $voucherId, 'admin_expire', 'blocked');
+    recordSecurityEvent('EXPIRED_VOUCHER', 'medium', $code, null, ['source' => 'admin']);
+    radius_disconnect($code);
+    return true;
 }

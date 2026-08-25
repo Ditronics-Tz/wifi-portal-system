@@ -16,16 +16,16 @@ function createPackage(string $name, string $slug, int $durationSeconds, float $
     $slug = trim($slug);
 
     if (empty($name) || empty($slug)) {
-        throw new Exception('Jina na slug ni lazima.');
+        throw new Exception('Name and slug are required.');
     }
     if (!preg_match('/^[a-z0-9_]+$/', $slug)) {
-        throw new Exception('Slug inaweza kuwa na herufi ndogo, nambari, na _ tu.');
+        throw new Exception('Slug can only contain lowercase letters, numbers, and _.');
     }
     if ($durationSeconds < 60) {
-        throw new Exception('Muda lazima uwe angalau sekunde 60.');
+        throw new Exception('Duration must be at least 60 seconds.');
     }
     if ($price < 0) {
-        throw new Exception('Bei si sahihi.');
+        throw new Exception('Invalid price.');
     }
 
     $db = getDB();
@@ -34,7 +34,7 @@ function createPackage(string $name, string $slug, int $durationSeconds, float $
     $stmt = $db->prepare("SELECT id FROM packages WHERE slug = :slug");
     $stmt->execute([':slug' => $slug]);
     if ($stmt->fetch()) {
-        throw new Exception('Slug tayari imetumika.');
+        throw new Exception('Slug is already in use.');
     }
 
     // Get max sort order
@@ -106,7 +106,7 @@ function deletePackage(int $id, ?int $adminUserId = null): bool {
     $stmt->execute([':id' => $id]);
     $pkg = $stmt->fetch();
     if (!$pkg) {
-        throw new Exception('Package haikupatikana.');
+        throw new Exception('Package not found.');
     }
 
     // Soft delete: deactivate + mark deleted
@@ -178,6 +178,16 @@ function getPackageBySlug(string $slug, bool $includeDeleted = false): ?array {
     if (!$includeDeleted) $sql .= " AND is_deleted = false";
     $stmt = $db->prepare($sql);
     $stmt->execute([':slug' => $slug]);
+    $row = $stmt->fetch();
+    return $row ?: null;
+}
+
+function getPackageByName(string $name, bool $includeDeleted = false): ?array {
+    $db = getDB();
+    $sql = "SELECT * FROM packages WHERE name = :name";
+    if (!$includeDeleted) $sql .= " AND is_deleted = false";
+    $stmt = $db->prepare($sql);
+    $stmt->execute([':name' => $name]);
     $row = $stmt->fetch();
     return $row ?: null;
 }

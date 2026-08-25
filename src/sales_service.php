@@ -46,23 +46,23 @@ function recordSale(
         $voucher = $stmt->fetch();
 
         if (!$voucher) {
-            throw new Exception('Voucher haikupatikana.');
+            throw new Exception('Voucher not found.');
         }
 
         if ($voucher['status'] !== 'unused') {
-            throw new Exception('Voucher hii tayari imetumika au imekwisha muda.');
+            throw new Exception('This voucher has already been used or has expired.');
         }
 
         // Check if already sold
         $stmt = $db->prepare("SELECT id FROM sales WHERE voucher_code = :code");
         $stmt->execute([':code' => $voucherCode]);
         if ($stmt->fetch()) {
-            throw new Exception('Voucher hii tayari imeuzwa.');
+            throw new Exception('This voucher has already been sold.');
         }
 
         // Verify seller owns this voucher (or is admin — handled by caller)
         if ($voucher['seller_id'] !== null && (int) $voucher['seller_id'] !== $sellerId) {
-            throw new Exception('Voucher hii si yako.');
+            throw new Exception('This voucher does not belong to you.');
         }
 
         // Validate buyer phone if provided
@@ -76,7 +76,7 @@ function recordSale(
         // Use custom price or plan price
         $price = $customPrice !== null ? $customPrice : (float) $voucher['price'];
         if ($price < 0) {
-            throw new Exception('Bei si sahihi.');
+            throw new Exception('Invalid price.');
         }
 
         // Create the sale record

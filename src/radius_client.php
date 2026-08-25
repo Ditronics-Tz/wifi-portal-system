@@ -5,6 +5,7 @@
  */
 
 require_once dirname(__DIR__) . '/config.php';
+require_once dirname(__DIR__) . '/src/db.php';
 
 /**
  * Send Access-Request to FreeRADIUS via radclient
@@ -123,23 +124,83 @@ function parseRadiusResponse($output) {
 }
 
 /**
- * Send CoA Disconnect-Request (optional/stretch goal)
- * This can be used to forcibly disconnect a user
+ * Send Disconnect-Request to the NAS (AP). EAP firmware may ignore CoA;
+ * the voucher is still expired in the database regardless.
  */
-function radius_disconnect($username, $nasIpAddress = '127.0.0.1', $nasPort = 1) {
-    $input = sprintf(
-        "User-Name = \"%s\"\nNAS-IP-Address = %s\nNAS-Port = %d\n",
-        $username,
-        $nasIpAddress,
-        $nasPort
-    );
-    
-    // Note: CoA typically uses port 3799, but this depends on FreeRADIUS config
-    // This is a stretch goal - implement only if needed
-    error_log("CoA disconnect requested for $username - not implemented in v1");
-    
+function radius_disconnect($username, $nasIpAddress = null, $nasPort = 1) {
+    if (!preg_match('/^[A-Za-z0-9]{1,64}$/', $username)) {
+        return ['success' => false, 'message' => 'Invalid username'];
+    }
+
+    $nasIp = $nasIpAddress ?: (defined('RADIUS_NAS_IP') ? RADIUS_NAS_IP : '127.0.0.1');
+    if (!filter_var($nasIp, FILTER_VALIDATE_IP)) {
+        return ['success' => false, 'message' => 'Invalid NAS IP'];
+    }
+
+    $coaPort = defined('RADIUS_COA_PORT') ? (int) RADIUS_COA_PORT : 3799;
+    $secret = defined('RADIUS_NAS_SECRET') ? RADIUS_NAS_SECRET : RADIUS_SECRET;
+
+    $acctSessionId = null;
+    $callingStation = null;
+    try {
+        $db = getDB();
+        $stmt = $db->prepare("
+            SELECT acctsessionid, callingstationid
+            FROM radacct
+            WHERE username = :username AND acctstoptime IS NULL
+            ORDER BY acctstarttime DESC
+            LIMIT 1
+        ");
+        $stmt->execute([':username' => $username]);
+        $acct = $stmt->fetch();
+        if ($acct) {
+            $acctSessionId = $acct['acctsessionid'] ?: null;
+            $callingStation = $acct['callingstationid'] ?: null;
+        }
+    } catch (Exception $e) {
+        // radacct optional
+    }
+
+    $lines = [
+        sprintf('User-Name = "%s"', $username),
+        sprintf('NAS-IP-Address = %s', $nasIp),
+        sprintf('NAS-Port = %d', (int) $nasPort),
+    ];
+    if ($acctSessionId && preg_match('/^[A-Za-z0-9.:_-]+$/', $acctSessionId)) {
+        $lines[] = sprintf('Acct-Session-Id = "%s"', $acctSessionId);
+    }
+    if ($callingStation && preg_match('/^[A-Fa-f0-9:.-]+$/', $callingStation)) {
+        $lines[] = sprintf('Calling-Station-Id = "%s"', $callingStation);
+    }
+    $input = implode("\n", $lines) . "\n";
+
+    $target = sprintf('%s:%d', $nasIp, $coaPort);
+    $descriptors = [
+        0 => ['pipe', 'r'],
+        1 => ['pipe', 'w'],
+        2 => ['pipe', 'w'],
+    ];
+    $command = ['radclient', '-t', '5', '-r', '2', '-c', '1', $target, 'disconnect', $secret];
+
+    $process = proc_open($command, $descriptors, $pipes);
+    if (!is_resource($process)) {
+        error_log('Failed to start radclient for disconnect');
+        return ['success' => false, 'message' => 'Disconnect client unavailable'];
+    }
+
+    fwrite($pipes[0], $input);
+    fclose($pipes[0]);
+    $stdout = stream_get_contents($pipes[1]);
+    $stderr = stream_get_contents($pipes[2]);
+    fclose($pipes[1]);
+    fclose($pipes[2]);
+    $exitCode = proc_close($process);
+
+    error_log("radclient disconnect exit=$exitCode stdout=$stdout stderr=$stderr");
+
+    $ok = (strpos($stdout, 'Disconnect-ACK') !== false) || (strpos($stdout, 'CoA-ACK') !== false);
     return [
-        'success' => false,
-        'message' => 'CoA disconnect not implemented in v1'
+        'success' => $ok,
+        'message' => $ok ? 'Disconnect sent' : trim($stdout . ' ' . $stderr),
     ];
 }

@@ -23,15 +23,15 @@ function createSeller(string $username, string $password, ?string $fullName, ?st
     // Validate username
     $username = trim($username);
     if (empty($username) || strlen($username) < 3 || strlen($username) > 64) {
-        throw new Exception('Jina la mtumiaji lazima liwe na herufi 3-64.');
+        throw new Exception('Username must be 3-64 characters.');
     }
     if (!preg_match('/^[a-zA-Z0-9_]+$/', $username)) {
-        throw new Exception('Jina la mtumiaji linaweza kuwa na herufi, nambari, na _ tu.');
+        throw new Exception('Username can only contain letters, numbers, and _.');
     }
 
     // Validate password
     if (strlen($password) < 8) {
-        throw new Exception('Nywila lazima iwe na angalau herufi 8.');
+        throw new Exception('Password must be at least 8 characters.');
     }
 
     // Validate phone if provided
@@ -47,14 +47,14 @@ function createSeller(string $username, string $password, ?string $fullName, ?st
     $stmt = $db->prepare("SELECT id FROM users WHERE username = :u");
     $stmt->execute([':u' => $username]);
     if ($stmt->fetch()) {
-        throw new Exception('Jina hili la mtumiaji tayari limetumika.');
+        throw new Exception('This username is already taken.');
     }
 
     if ($phone) {
         $stmt = $db->prepare("SELECT id FROM users WHERE phone = :p");
         $stmt->execute([':p' => $phone]);
         if ($stmt->fetch()) {
-            throw new Exception('Namba hii ya simu tayari imetumika.');
+            throw new Exception('This phone number is already in use.');
         }
     }
 
@@ -293,7 +293,7 @@ function updateSeller(int $sellerId, ?string $fullName, ?string $phone, ?int $ad
             $stmt = $db->prepare("SELECT id FROM users WHERE phone = :p AND id != :id");
             $stmt->execute([':p' => $phone, ':id' => $sellerId]);
             if ($stmt->fetch()) {
-                throw new Exception('Namba hii ya simu tayari imetumika.');
+                throw new Exception('This phone number is already in use.');
             }
         }
         $sets[] = "phone = :phone";
@@ -324,7 +324,7 @@ function updateSeller(int $sellerId, ?string $fullName, ?string $phone, ?int $ad
  */
 function changeSellerPassword(int $sellerId, string $newPassword, ?int $adminUserId = null): bool {
     if (strlen($newPassword) < 8) {
-        throw new Exception('Nywila lazima iwe na angalau herufi 8.');
+        throw new Exception('Password must be at least 8 characters.');
     }
 
     $db = getDB();
@@ -362,7 +362,7 @@ function validateAndFormatPhone(string $phone): string {
         return '+255' . substr($phone, 1);
     }
 
-    throw new Exception('Namba ya simu si sahihi. Tumia mfano: 0712345678 au +255712345678');
+    throw new Exception('Invalid phone number. Use format: 0712345678 or +255712345678');
 }
 
 // ── Seller Stats ────────────────────────────────────────────────

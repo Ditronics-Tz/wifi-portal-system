@@ -43,13 +43,15 @@ function createTables(PDO $db): void {
             first_used_at TIMESTAMP NULL,
             expires_at TIMESTAMP NULL,
             created_by VARCHAR(64),
-            seller_id INTEGER NULL
+            seller_id INTEGER NULL,
+            first_mac VARCHAR(17) NULL
         )
     ");
 
     $db->exec("CREATE INDEX IF NOT EXISTS idx_vouchers_code ON vouchers(code)");
     $db->exec("CREATE INDEX IF NOT EXISTS idx_vouchers_status ON vouchers(status)");
     $db->exec("CREATE INDEX IF NOT EXISTS idx_vouchers_seller_id ON vouchers(seller_id)");
+    $db->exec("CREATE INDEX IF NOT EXISTS idx_vouchers_first_mac ON vouchers(first_mac)");
 
     // ── FreeRADIUS tables ────────────────────────────────────────
     $db->exec("
@@ -71,6 +73,9 @@ function createTables(PDO $db): void {
             value VARCHAR(253) NOT NULL
         )
     ");
+
+    $db->exec("CREATE INDEX IF NOT EXISTS idx_radcheck_username ON radcheck(username)");
+    $db->exec("CREATE INDEX IF NOT EXISTS idx_radreply_username ON radreply(username)");
 
     // ── Users ────────────────────────────────────────────────────
     $db->exec("
@@ -155,6 +160,45 @@ function createTables(PDO $db): void {
     $db->exec("CREATE INDEX IF NOT EXISTS idx_audit_log_action ON audit_log(action)");
     $db->exec("CREATE INDEX IF NOT EXISTS idx_audit_log_created_at ON audit_log(created_at)");
 
+    // ── Voucher sessions (authorization object) ──────────────────
+    $db->exec("
+        CREATE TABLE IF NOT EXISTS voucher_sessions (
+            id SERIAL PRIMARY KEY,
+            voucher_id INT NOT NULL REFERENCES vouchers(id),
+            client_mac VARCHAR(17) NULL,
+            client_ip VARCHAR(45) NULL,
+            gateway_session_id VARCHAR(64) NULL,
+            nas_ip VARCHAR(45) NULL,
+            started_at TIMESTAMP NOT NULL DEFAULT NOW(),
+            last_seen_at TIMESTAMP NOT NULL DEFAULT NOW(),
+            expires_at TIMESTAMP NULL,
+            status VARCHAR(16) NOT NULL DEFAULT 'active'
+                CHECK (status IN ('active', 'closed', 'blocked')),
+            closed_at TIMESTAMP NULL,
+            close_reason VARCHAR(64) NULL
+        )
+    ");
+    $db->exec("CREATE INDEX IF NOT EXISTS idx_voucher_sessions_voucher_status ON voucher_sessions (voucher_id, status)");
+    $db->exec("CREATE INDEX IF NOT EXISTS idx_voucher_sessions_mac ON voucher_sessions (client_mac)");
+    $db->exec("CREATE INDEX IF NOT EXISTS idx_voucher_sessions_acct ON voucher_sessions (gateway_session_id)");
+
+    $db->exec("
+        CREATE TABLE IF NOT EXISTS security_events (
+            id SERIAL PRIMARY KEY,
+            session_id INT NULL REFERENCES voucher_sessions(id),
+            voucher_code VARCHAR(32) NULL,
+            event_type VARCHAR(32) NOT NULL,
+            severity VARCHAR(16) NOT NULL DEFAULT 'info'
+                CHECK (severity IN ('info', 'low', 'medium', 'high')),
+            metadata JSONB NULL,
+            created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+            resolved_at TIMESTAMP NULL
+        )
+    ");
+    $db->exec("CREATE INDEX IF NOT EXISTS idx_security_events_created ON security_events (created_at DESC)");
+    $db->exec("CREATE INDEX IF NOT EXISTS idx_security_events_type ON security_events (event_type)");
+    $db->exec("CREATE INDEX IF NOT EXISTS idx_security_events_voucher ON security_events (voucher_code)");
+
     // ── Seed default packages if empty ───────────────────────────
     $count = $db->query("SELECT COUNT(*) FROM packages")->fetchColumn();
     if ($count == 0) {
@@ -181,10 +225,9 @@ function createTables(PDO $db): void {
  * Generate a random voucher code
  */
 function generateVoucherCode($length = 10) {
-    $characters = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
     $code = '';
     for ($i = 0; $i < $length; $i++) {
-        $code .= $characters[random_int(0, strlen($characters) - 1)];
+        $code .= (string) random_int(0, 9);
     }
     return $code;
 }

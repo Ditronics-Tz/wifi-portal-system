@@ -13,7 +13,7 @@ $error   = null;
 if (!empty($code)) {
     $voucher = getVoucherByCode($code);
     if (!$voucher) {
-        $error = 'Voucher haikupatikana.';
+        $error = 'Voucher not found.';
     }
 }
 
@@ -29,11 +29,11 @@ function formatTime(int $seconds): string {
 }
 ?>
 <!DOCTYPE html>
-<html lang="sw">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Hali ya Voucher - WiFi Portal</title>
+    <title>Voucher Status - WiFi Portal</title>
     <link rel="stylesheet" href="/assets/style.css">
 </head>
 <body>
@@ -41,7 +41,7 @@ function formatTime(int $seconds): string {
         <div class="card status-card">
             <div class="header">
                 <div class="brand-icon"><img src="/assets/ditronics-logo.png" alt="Ditronics"></div>
-                <h1>Hali ya Voucher</h1>
+                <h1>Voucher Status</h1>
             </div>
 
             <?php if ($error): ?>
@@ -53,15 +53,16 @@ function formatTime(int $seconds): string {
                 <!-- No code entered — show search form -->
                 <form method="GET" action="" class="voucher-form">
                     <div class="form-group">
-                        <label for="code">Weka msimbo wa voucher</label>
+                        <label for="code">Enter your voucher code</label>
                         <div class="input-wrapper">
                             <input
                                 type="text"
+                                inputmode="numeric"
                                 id="code"
                                 name="code"
-                                placeholder="Mfano: ABC12345XY"
+                                placeholder="Example: 0123456789"
                                 maxlength="10"
-                                pattern="[A-Za-z0-9]{8,10}"
+                                pattern="[0-9]{10}"
                                 required
                                 autofocus
                                 autocomplete="off"
@@ -71,7 +72,7 @@ function formatTime(int $seconds): string {
                         </div>
                     </div>
                     <button type="submit" class="btn btn-primary">
-                        <span>Tafuta</span>
+                        <span>Search</span>
                     </button>
                 </form>
 
@@ -91,15 +92,15 @@ function formatTime(int $seconds): string {
                 }
 
                 $statusLabel = match($status) {
-                    'unused'  => ['Haijatumika',  '#6366f1'],
-                    'active'  => ['Inafanya kazi', '#10b981'],
-                    'expired' => ['Imekwisha',     '#ef4444'],
+                    'unused'  => ['Unused',  '#6366f1'],
+                    'active'  => ['Active', '#10b981'],
+                    'expired' => ['Expired',     '#ef4444'],
                     default   => ['--',            '#94a3b8'],
                 };
             ?>
 
                 <div class="countdown-display">
-                    <div class="countdown-label">Muda Uliobaki</div>
+                    <div class="countdown-label">Time Remaining</div>
                     <div class="countdown-time" id="countdown">
                         <?= $status === 'active' ? formatTime($remaining) : '—' ?>
                     </div>
@@ -107,26 +108,26 @@ function formatTime(int $seconds): string {
 
                 <div class="status-info">
                     <div class="status-row">
-                        <span class="status-label">Msimbo</span>
+                        <span class="status-label">Code</span>
                         <span class="status-value" style="font-family:monospace;"><?= htmlspecialchars($voucher['code']) ?></span>
                     </div>
                     <div class="status-row">
-                        <span class="status-label">Mpango</span>
+                        <span class="status-label">Plan</span>
                         <span class="status-value"><?= htmlspecialchars($voucher['plan_name']) ?></span>
                     </div>
                     <div class="status-row">
-                        <span class="status-label">Hali</span>
+                        <span class="status-label">Status</span>
                         <span class="status-value" style="color:<?= $statusLabel[1] ?>; font-weight:700;"><?= $statusLabel[0] ?></span>
                     </div>
                     <?php if ($voucher['first_used_at']): ?>
                     <div class="status-row">
-                        <span class="status-label">Ilianza</span>
+                        <span class="status-label">Started</span>
                         <span class="status-value"><?= date('d/m/Y H:i', strtotime($voucher['first_used_at'])) ?></span>
                     </div>
                     <?php endif; ?>
                     <?php if ($expiresAt): ?>
                     <div class="status-row">
-                        <span class="status-label">Inakwisha</span>
+                        <span class="status-label">Expires</span>
                         <span class="status-value"><?= date('d/m/Y H:i', $expiresAt) ?></span>
                     </div>
                     <?php endif; ?>
@@ -140,21 +141,21 @@ function formatTime(int $seconds): string {
                     </div>
                     <div class="progress-text">
                         <span id="progressPercent"><?= round(($remaining / max(1, $remaining + (time() - strtotime($voucher['first_used_at'])))) * 100) ?>%</span>
-                        <span>ya muda umebaki</span>
+                        <span>time remaining</span>
                     </div>
                 </div>
                 <?php endif; ?>
 
                 <div class="tips-box">
-                    <h3>📋 Taarifa</h3>
+                    <h3>📋 Info</h3>
                     <ul>
                         <?php if ($status === 'active'): ?>
-                        <li>Unaweza kutumia mtandao kwa muda wote wa voucher</li>
-                        <li>Kuondoka mapema, tembelea: <code>http://portal.tplink.net/portal/logout</code></li>
+                        <li>You can use the internet for the full duration of the voucher</li>
+                        <li>To disconnect early, visit: <code>http://portal.tplink.net/portal/logout</code></li>
                         <?php elseif ($status === 'expired'): ?>
-                        <li>Voucher hii imekwisha muda — nunua mpya ili kuendelea</li>
+                        <li>This voucher has expired — buy a new one to continue</li>
                         <?php else: ?>
-                        <li>Weka voucher kwenye portal ili kuanza kutumia mtandao</li>
+                        <li>Enter the voucher on the portal to start using the internet</li>
                         <?php endif; ?>
                     </ul>
                 </div>
@@ -162,12 +163,12 @@ function formatTime(int $seconds): string {
             <?php endif; ?>
 
             <div style="text-align:center; margin-top:16px;">
-                <a href="/" class="info-link">← Rudi kwenye Voucher Portal</a>
+                <a href="/" class="info-link">← Back to Voucher Portal</a>
             </div>
         </div>
 
         <div class="footer">
-            <p>&copy; <?= date('Y') ?> WiFi Portal &middot; Huduma ya Mtandao</p>
+            <p>&copy; <?= date('Y') ?> WiFi Portal &middot; Network Service</p>
         </div>
     </div>
 
@@ -191,7 +192,7 @@ function formatTime(int $seconds): string {
 
         function tick() {
             if (remaining <= 0) {
-                countdownEl.textContent = 'Muda umekwisha';
+                countdownEl.textContent = 'Time expired';
                 countdownEl.style.opacity = '0.6';
                 progressFill.style.width = '0%';
                 if (progressPct) progressPct.textContent = '0%';

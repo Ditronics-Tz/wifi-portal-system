@@ -20,16 +20,16 @@ if ($sellerId) {
 } else { $stockVouchers = []; }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    if (!validateCSRFToken($_POST['csrf_token'] ?? '')) { $error = 'Ombi si sahihi.'; }
+    if (!validateCSRFToken($_POST['csrf_token'] ?? '')) { $error = 'Invalid request.'; }
     else {
         $voucherCode = strtoupper(trim($_POST['voucher_code'] ?? ''));
-        if (empty($voucherCode)) { $error = 'Chagua voucher.'; }
-        elseif (!$sellerId) { $error = 'Seller ID haikupatikana.'; }
+        if (empty($voucherCode)) { $error = 'Choose a voucher.'; }
+        elseif (!$sellerId) { $error = 'Seller ID not found.'; }
         else {
             try {
                 $saleId = recordSale($voucherCode, $sellerId, trim($_POST['buyer_phone'] ?? '') ?: null, trim($_POST['buyer_name'] ?? '') ?: null, !empty($_POST['custom_price']) ? floatval($_POST['custom_price']) : null);
                 $db = getDB(); $stmt = $db->prepare("SELECT * FROM sales WHERE id = :id"); $stmt->execute([':id' => $saleId]); $lastSale = $stmt->fetch();
-                $success = "Mauzo yamerekodwa: $voucherCode";
+                $success = "Sale recorded: $voucherCode";
             } catch (Exception $e) { $error = $e->getMessage(); }
         }
     }
@@ -37,11 +37,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $csrf = generateCSRFToken();
 ?>
 <!DOCTYPE html>
-<html lang="sw">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Rekodi Mauzo - Seller</title>
+    <title>Record Sale - Seller</title>
     <link rel="stylesheet" href="/assets/style.css">
 </head>
 <body>
@@ -52,20 +52,20 @@ $csrf = generateCSRFToken();
                 <nav class="admin-nav">
                     <a href="/seller/dashboard.php">Dashboard</a>
                     <a href="/seller/generate.php">Generate</a>
-                    <a href="/seller/record-sale.php" class="active">Rekodi Mauzo</a>
-                    <a href="/seller/my-sales.php">Mauzo Yangu</a>
+                    <a href="/seller/record-sale.php" class="active">Record Sale</a>
+                    <a href="/seller/my-sales.php">My Sales</a>
                 </nav>
                 <div class="admin-user">
                     <div class="admin-user-avatar"><?php echo strtoupper(substr($sellerUsername, 0, 1)); ?></div>
                     <span><?php echo htmlspecialchars($sellerUsername); ?></span>
-                    <a href="/seller/logout.php" style="color: var(--text-tertiary); text-decoration: none; font-size: var(--text-xs);">Toka</a>
+                    <a href="/seller/logout.php" style="color: var(--text-tertiary); text-decoration: none; font-size: var(--text-xs);">Logout</a>
                 </div>
             </div>
         </header>
         <main class="admin-content">
             <div class="section-header">
-                <h1>Rekodi Mauzo</h1>
-                <p>Rekodi mauzo ya voucher uliyompa mteja.</p>
+                <h1>Record Sale</h1>
+                <p>Record a voucher sale you made to a customer.</p>
             </div>
 
             <?php if ($success && $lastSale): ?>
@@ -75,9 +75,9 @@ $csrf = generateCSRFToken();
                     <div class="confirm-details">
                         <div class="detail-grid">
                             <span class="detail-label">Package:</span><span class="detail-value"><?php echo htmlspecialchars($lastSale['plan_name']); ?></span>
-                            <span class="detail-label">Bei:</span><span class="detail-value" style="color: var(--color-secondary); font-weight: 600;"><?php echo number_format($lastSale['price']); ?> TZS</span>
-                            <?php if ($lastSale['buyer_name']): ?><span class="detail-label">Mteja:</span><span class="detail-value"><?php echo htmlspecialchars($lastSale['buyer_name']); ?></span><?php endif; ?>
-                            <?php if ($lastSale['buyer_phone']): ?><span class="detail-label">Simu:</span><span class="detail-value"><?php echo htmlspecialchars($lastSale['buyer_phone']); ?></span><?php endif; ?>
+                            <span class="detail-label">Price:</span><span class="detail-value" style="color: var(--color-secondary); font-weight: 600;"><?php echo number_format($lastSale['price']); ?> TZS</span>
+                            <?php if ($lastSale['buyer_name']): ?><span class="detail-label">Customer:</span><span class="detail-value"><?php echo htmlspecialchars($lastSale['buyer_name']); ?></span><?php endif; ?>
+                            <?php if ($lastSale['buyer_phone']): ?><span class="detail-label">Phone:</span><span class="detail-value"><?php echo htmlspecialchars($lastSale['buyer_phone']); ?></span><?php endif; ?>
                         </div>
                     </div>
                 </div>
@@ -88,44 +88,45 @@ $csrf = generateCSRFToken();
             <div class="admin-card">
                 <div class="admin-card-header">
                     <div class="admin-card-header-text">
-                        <h2 class="admin-card-title">Fomu ya Mauzo</h2>
-                        <p class="admin-card-subtitle">Chagua voucher kutoka stock yako na weka maelezo ya mteja</p>
+                        <h2 class="admin-card-title">Sale Form</h2>
+                        <p class="admin-card-subtitle">Choose a voucher from your stock and enter customer details</p>
                     </div>
                 </div>
                 <?php if (empty($stockVouchers) && !$success): ?>
                     <div class="empty-state">
                         <div class="empty-state-icon">📦</div>
-                        <div class="empty-state-title">Huna voucher za kuuza</div>
-                        <div class="empty-state-text"><a href="/seller/generate.php">Tengeneza voucher kwanza</a> kabla ya kurekodi mauzo.</div>
+                        <div class="empty-state-title">No vouchers to sell</div>
+                        <div class="empty-state-text"><a href="/seller/generate.php">Generate vouchers first</a> before recording a sale.</div>
                     </div>
                 <?php else: ?>
-                <form method="POST" action="">
+                <form method="POST" action="" data-confirm="Record this sale?" data-confirm-tone="neutral">
                     <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($csrf); ?>">
                     <div class="form-group">
-                        <label for="voucher_code">Chagua Voucher</label>
+                        <label for="voucher_code">Choose Voucher</label>
                         <select name="voucher_code" id="voucher_code" class="form-select" required onchange="updatePrice(this)">
-                            <option value="">Chagua voucher...</option>
+                            <option value="">Select a voucher...</option>
                             <?php $grouped = []; foreach ($stockVouchers as $v) { $grouped[$v['plan_name']][] = $v; } foreach ($grouped as $pn => $vs): ?>
                                 <optgroup label="<?php echo htmlspecialchars($pn); ?> (<?php echo count($vs); ?>)">
                                     <?php foreach ($vs as $v): ?><option value="<?php echo htmlspecialchars($v['code']); ?>" data-price="<?php echo $v['price']; ?>" data-plan="<?php echo htmlspecialchars($pn); ?>"><?php echo htmlspecialchars($v['code']); ?></option><?php endforeach; ?>
                                 </optgroup>
                             <?php endforeach; ?>
                         </select>
-                        <div class="form-hint"><?php echo count($stockVouchers); ?> voucher zinapatikana</div>
+                        <div class="form-hint"><?php echo count($stockVouchers); ?> voucher(s) available</div>
                     </div>
-                    <div class="form-group"><label for="buyer_name">Jina la Mteja (si lazima)</label><input type="text" id="buyer_name" name="buyer_name" class="form-input" placeholder="Jina la mteja" value="<?php echo htmlspecialchars($_POST['buyer_name'] ?? ''); ?>"></div>
-                    <div class="form-group"><label for="buyer_phone">Namba ya Simu (si lazima)</label><input type="text" id="buyer_phone" name="buyer_phone" class="form-input" placeholder="0712345678" value="<?php echo htmlspecialchars($_POST['buyer_phone'] ?? ''); ?>"></div>
+                    <div class="form-group"><label for="buyer_name">Customer Name (optional)</label><input type="text" id="buyer_name" name="buyer_name" class="form-input" placeholder="Customer's name" value="<?php echo htmlspecialchars($_POST['buyer_name'] ?? ''); ?>"></div>
+                    <div class="form-group"><label for="buyer_phone">Phone Number (optional)</label><input type="text" id="buyer_phone" name="buyer_phone" class="form-input" placeholder="0712345678" value="<?php echo htmlspecialchars($_POST['buyer_phone'] ?? ''); ?>"></div>
                     <div class="form-group">
-                        <label for="custom_price">Bei (TZS) — <span id="priceHint" style="color: var(--text-tertiary);">chagua voucher</span></label>
-                        <input type="number" id="custom_price" name="custom_price" class="form-number" min="0" step="50" placeholder="Bei ya package" value="<?php echo htmlspecialchars($_POST['custom_price'] ?? ''); ?>">
-                        <div class="form-hint">Acha tupu kutumia bei ya package. Weka bei mpya kama kuna discount.</div>
+                        <label for="custom_price">Price (TZS) — <span id="priceHint" style="color: var(--text-tertiary);">choose a voucher</span></label>
+                        <input type="number" id="custom_price" name="custom_price" class="form-number" min="0" step="50" placeholder="Package price" value="<?php echo htmlspecialchars($_POST['custom_price'] ?? ''); ?>">
+                        <div class="form-hint">Leave blank to use the package price. Enter a new price for a discount.</div>
                     </div>
-                    <button type="submit" class="btn btn-primary" style="max-width: 250px;" onclick="return confirm('Rekodi mauzo haya?');">Rekodi Mauzo</button>
+                    <button type="submit" class="btn btn-primary" style="max-width: 250px;">Record Sale</button>
                 </form>
-                <script>function updatePrice(s){var o=s.options[s.selectedIndex];var h=document.getElementById('priceHint');if(o&&o.value){h.textContent='Bei: '+Number(o.getAttribute('data-price')).toLocaleString()+' TZS ('+o.getAttribute('data-plan')+')';}else{h.textContent='chagua voucher';}}</script>
+                <script>function updatePrice(s){var o=s.options[s.selectedIndex];var h=document.getElementById('priceHint');if(o&&o.value){h.textContent='Price: '+Number(o.getAttribute('data-price')).toLocaleString()+' TZS ('+o.getAttribute('data-plan')+')';}else{h.textContent='choose a voucher';}}</script>
                 <?php endif; ?>
             </div>
         </main>
     </div>
+    <script src="/assets/admin.js"></script>
 </body>
 </html>
