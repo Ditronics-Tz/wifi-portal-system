@@ -11,15 +11,11 @@ require_once __DIR__ . '/db.php';
 /**
  * Create a new package
  */
-function createPackage(string $name, string $slug, int $durationSeconds, float $price, ?int $bandwidthMbps, ?int $dataQuotaMb, ?string $description, ?int $createdBy = null): int {
+function createPackage(string $name, int $durationSeconds, float $price, ?int $bandwidthMbps, ?int $dataQuotaMb, ?string $description, ?int $createdBy = null): int {
     $name = trim($name);
-    $slug = trim($slug);
 
-    if (empty($name) || empty($slug)) {
-        throw new Exception('Name and slug are required.');
-    }
-    if (!preg_match('/^[a-z0-9_]+$/', $slug)) {
-        throw new Exception('Slug can only contain lowercase letters, numbers, and _.');
+    if ($name === '') {
+        throw new Exception('Name is required.');
     }
     if ($durationSeconds < 60) {
         throw new Exception('Duration must be at least 60 seconds.');
@@ -30,23 +26,20 @@ function createPackage(string $name, string $slug, int $durationSeconds, float $
 
     $db = getDB();
 
-    // Check slug uniqueness
-    $stmt = $db->prepare("SELECT id FROM packages WHERE slug = :slug");
-    $stmt->execute([':slug' => $slug]);
+    $stmt = $db->prepare("SELECT id FROM packages WHERE name = :name AND is_deleted = false");
+    $stmt->execute([':name' => $name]);
     if ($stmt->fetch()) {
-        throw new Exception('Slug is already in use.');
+        throw new Exception('A package with this name already exists.');
     }
 
-    // Get max sort order
     $maxSort = $db->query("SELECT COALESCE(MAX(sort_order), 0) FROM packages")->fetchColumn();
 
     $stmt = $db->prepare("
-        INSERT INTO packages (name, slug, duration_seconds, price, bandwidth_mbps, data_quota_mb, description, is_active, sort_order, created_by)
-        VALUES (:name, :slug, :duration, :price, :bw, :quota, :desc, 1, :sort, :created_by)
+        INSERT INTO packages (name, duration_seconds, price, bandwidth_mbps, data_quota_mb, description, is_active, sort_order, created_by)
+        VALUES (:name, :duration, :price, :bw, :quota, :desc, true, :sort, :created_by)
     ");
     $stmt->execute([
         ':name'        => $name,
-        ':slug'        => $slug,
         ':duration'    => $durationSeconds,
         ':price'       => $price,
         ':bw'          => $bandwidthMbps,
@@ -57,7 +50,7 @@ function createPackage(string $name, string $slug, int $durationSeconds, float $
     ]);
 
     $id = (int) $db->lastInsertId();
-    writeAuditLog('package_created', $createdBy, 'package', (string) $id, ['name' => $name, 'slug' => $slug]);
+    writeAuditLog('package_created', $createdBy, 'package', (string) $id, ['name' => $name]);
     return $id;
 }
 
@@ -74,6 +67,10 @@ function updatePackage(int $id, array $data, ?int $adminUserId = null): bool {
 
     foreach ($allowed as $field) {
         if (array_key_exists($field, $data)) {
+            if ($field === 'is_active') {
+                $sets[] = 'is_active = ' . (filter_var($data[$field], FILTER_VALIDATE_BOOLEAN) ? 'true' : 'false');
+                continue;
+            }
             $sets[] = "$field = :$field";
             $params[":$field"] = $data[$field];
         }
@@ -144,14 +141,14 @@ function restorePackage(int $id, ?int $adminUserId = null): bool {
  * Activate a package
  */
 function activatePackage(int $id, ?int $adminUserId = null): bool {
-    return updatePackage($id, ['is_active' => 1], $adminUserId);
+    return updatePackage($id, ['is_active' => true], $adminUserId);
 }
 
 /**
  * Deactivate a package
  */
 function deactivatePackage(int $id, ?int $adminUserId = null): bool {
-    return updatePackage($id, ['is_active' => 0], $adminUserId);
+    return updatePackage($id, ['is_active' => false], $adminUserId);
 }
 
 // ── Query Functions ─────────────────────────────────────────────
@@ -165,19 +162,6 @@ function getPackageById(int $id, bool $includeDeleted = false): ?array {
     if (!$includeDeleted) $sql .= " AND is_deleted = false";
     $stmt = $db->prepare($sql);
     $stmt->execute([':id' => $id]);
-    $row = $stmt->fetch();
-    return $row ?: null;
-}
-
-/**
- * Get a package by slug
- */
-function getPackageBySlug(string $slug, bool $includeDeleted = false): ?array {
-    $db = getDB();
-    $sql = "SELECT * FROM packages WHERE slug = :slug";
-    if (!$includeDeleted) $sql .= " AND is_deleted = false";
-    $stmt = $db->prepare($sql);
-    $stmt->execute([':slug' => $slug]);
     $row = $stmt->fetch();
     return $row ?: null;
 }
@@ -207,7 +191,7 @@ function getAllPackages(?bool $activeOnly = null, int $limit = 100, int $offset 
 
     if ($activeOnly !== null) {
         $sql .= " AND p.is_active = :active";
-        $params[':active'] = $activeOnly ? 1 : 0;
+        $params[':active'] = $activeOnly;
     }
 
     $sql .= " ORDER BY p.sort_order ASC, p.id ASC LIMIT :limit OFFSET :offset";
@@ -245,7 +229,7 @@ function countPackages(?bool $activeOnly = null, bool $includeDeleted = false): 
 
     if ($activeOnly !== null) {
         $sql .= " AND is_active = :active";
-        $params[':active'] = $activeOnly ? 1 : 0;
+        $params[':active'] = $activeOnly;
     }
 
     $stmt = $db->prepare($sql);
@@ -283,7 +267,6 @@ function getPackagePopularity(): array {
         SELECT
             p.id,
             p.name,
-            p.slug,
             p.price,
             COUNT(v.id) AS voucher_count,
             COALESCE(SUM(CASE WHEN v.status = 'unused' THEN 1 ELSE 0 END), 0) AS unused_count,
@@ -292,7 +275,7 @@ function getPackagePopularity(): array {
         FROM packages p
         LEFT JOIN vouchers v ON v.plan_name = p.name
         WHERE p.is_active = true AND p.is_deleted = false
-        GROUP BY p.id, p.name, p.slug, p.price
+        GROUP BY p.id, p.name, p.price
         ORDER BY voucher_count DESC
     ");
     $stmt->execute();
@@ -311,13 +294,13 @@ function packageToPlan(array $pkg): array {
 }
 
 /**
- * Get all active packages as PLANS-compatible array (keyed by slug)
+ * Get all active packages as PLANS-compatible array (keyed by id)
  */
 function getActivePackagesAsPlans(): array {
     $packages = getActivePackages();
     $plans = [];
     foreach ($packages as $pkg) {
-        $plans[$pkg['slug']] = packageToPlan($pkg);
+        $plans[(string) $pkg['id']] = packageToPlan($pkg);
     }
     return $plans;
 }

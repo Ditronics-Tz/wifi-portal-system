@@ -9,15 +9,15 @@ $sellerId = getCurrentUserId();
 $sellerUsername = getCurrentUsername();
 $generated = [];
 $error = null;
-$planKey = '';
+$planId = 0;
 $packages = getActivePackages();
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!validateCSRFToken($_POST['csrf_token'] ?? '')) { $error = 'Invalid request.'; }
     else {
-        $planKey = $_POST['plan'] ?? '';
+        $planId = intval($_POST['plan'] ?? 0);
         $quantity = intval($_POST['quantity'] ?? 0);
-        $pkg = getPackageBySlug($planKey);
+        $pkg = $planId > 0 ? getPackageById($planId) : null;
         if (!$pkg || !$pkg['is_active']) { $error = 'Choose a valid package.'; }
         elseif ($quantity < 1 || $quantity > SELLER_MAX_GENERATE_QUANTITY) { $error = 'Quantity must be 1-' . SELLER_MAX_GENERATE_QUANTITY . '.'; }
         elseif (!$sellerId) { $error = 'Seller ID not found.'; }
@@ -31,7 +31,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $sellerUsername,
                     $sellerId
                 );
-                writeAuditLog('vouchers_generated', $sellerId, 'vouchers', null, ['package' => $planKey, 'quantity' => $quantity]);
+                writeAuditLog('vouchers_generated', $sellerId, 'vouchers', null, ['package' => $pkg['name'], 'quantity' => $quantity]);
             } catch (Exception $e) { $error = $e->getMessage(); }
         }
     }
@@ -108,7 +108,7 @@ function fmtDuration(int $s): string {
                         <select name="plan" id="plan" class="form-select" required>
                             <option value="">Select a package...</option>
                             <?php foreach ($packages as $pkg): ?>
-                                <option value="<?php echo htmlspecialchars($pkg['slug']); ?>" <?php echo ($planKey === $pkg['slug']) ? 'selected' : ''; ?>><?php echo htmlspecialchars($pkg['name']); ?> — <?php echo number_format($pkg['price']); ?> TZS (<?php echo fmtDuration((int)$pkg['duration_seconds']); ?>)</option>
+                                <option value="<?php echo (int) $pkg['id']; ?>" <?php echo ((int) $planId === (int) $pkg['id']) ? 'selected' : ''; ?>><?php echo htmlspecialchars($pkg['name']); ?> — <?php echo number_format($pkg['price']); ?> TZS (<?php echo fmtDuration((int)$pkg['duration_seconds']); ?>)</option>
                             <?php endforeach; ?>
                         </select>
                     </div>

@@ -124,7 +124,6 @@ function createTables(PDO $db): void {
         CREATE TABLE IF NOT EXISTS packages (
             id SERIAL PRIMARY KEY,
             name VARCHAR(64) NOT NULL,
-            slug VARCHAR(64) UNIQUE NOT NULL,
             duration_seconds INT NOT NULL,
             price NUMERIC(10,2) NOT NULL,
             bandwidth_mbps INT NULL,
@@ -139,8 +138,9 @@ function createTables(PDO $db): void {
         )
     ");
 
-    $db->exec("CREATE INDEX IF NOT EXISTS idx_packages_slug ON packages(slug)");
     $db->exec("CREATE INDEX IF NOT EXISTS idx_packages_is_active ON packages(is_active)");
+    $db->exec("DROP INDEX IF EXISTS idx_packages_slug");
+    $db->exec("ALTER TABLE packages DROP COLUMN IF EXISTS slug");
 
     // ── Audit Log ────────────────────────────────────────────────
     $db->exec("
@@ -203,19 +203,19 @@ function createTables(PDO $db): void {
     $count = $db->query("SELECT COUNT(*) FROM packages")->fetchColumn();
     if ($count == 0) {
         $defaults = [
-            ['siku_1', 'Siku 1', 86400, 500, null, null, 'Mtandao kwa saa 24', 1],
-            ['wiki_1', 'Wiki 1', 604800, 3000, null, null, 'Mtandao kwa siku 7', 2],
-            ['mwezi_1', 'Mwezi 1', 2592000, 10000, null, null, 'Mtandao kwa siku 30', 3],
+            ['Siku 1', 86400, 500, null, null, 'Mtandao kwa saa 24', 1],
+            ['Wiki 1', 604800, 3000, null, null, 'Mtandao kwa siku 7', 2],
+            ['Mwezi 1', 2592000, 10000, null, null, 'Mtandao kwa siku 30', 3],
         ];
         $stmt = $db->prepare("
-            INSERT INTO packages (slug, name, duration_seconds, price, bandwidth_mbps, data_quota_mb, description, sort_order)
-            VALUES (:slug, :name, :duration, :price, :bw, :quota, :desc, :sort)
+            INSERT INTO packages (name, duration_seconds, price, bandwidth_mbps, data_quota_mb, description, sort_order)
+            VALUES (:name, :duration, :price, :bw, :quota, :desc, :sort)
         ");
         foreach ($defaults as $d) {
             $stmt->execute([
-                ':slug' => $d[0], ':name' => $d[1], ':duration' => $d[2],
-                ':price' => $d[3], ':bw' => $d[4], ':quota' => $d[5],
-                ':desc' => $d[6], ':sort' => $d[7],
+                ':name' => $d[0], ':duration' => $d[1],
+                ':price' => $d[2], ':bw' => $d[3], ':quota' => $d[4],
+                ':desc' => $d[5], ':sort' => $d[6],
             ]);
         }
     }

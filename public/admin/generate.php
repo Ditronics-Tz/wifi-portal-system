@@ -8,7 +8,7 @@ requireAdmin();
 $generated = [];
 $error = null;
 $message = null;
-$planKey = '';
+$planId = 0;
 $packages = getAllPackages();
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
@@ -29,10 +29,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             }
         } else {
-            $planKey = $_POST['plan'] ?? '';
+            $planId = intval($_POST['plan'] ?? 0);
             $quantity = intval($_POST['quantity'] ?? 0);
-            // Find package by slug
-            $pkg = getPackageBySlug($planKey);
+            $pkg = $planId > 0 ? getPackageById($planId) : null;
             if (!$pkg || !$pkg['is_active']) { $error = 'Choose a valid package.'; }
             elseif ($quantity < 1 || $quantity > 100) { $error = 'Quantity must be 1-100.'; }
             else {
@@ -205,7 +204,7 @@ $pageTitle = 'Vouchers';
                     <select name="plan" id="plan" class="form-select" required>
                         <option value="">Select a package...</option>
                         <?php foreach ($packages as $pkg): if (!$pkg['is_active']) continue; ?>
-                            <option value="<?php echo htmlspecialchars($pkg['slug']); ?>" <?php echo ($planKey === $pkg['slug']) ? 'selected' : ''; ?>><?php echo htmlspecialchars($pkg['name']); ?> — <?php echo number_format($pkg['price']); ?> TZS (<?php echo fmtDuration((int)$pkg['duration_seconds']); ?>)</option>
+                            <option value="<?php echo (int) $pkg['id']; ?>" <?php echo ((int) $planId === (int) $pkg['id']) ? 'selected' : ''; ?>><?php echo htmlspecialchars($pkg['name']); ?> — <?php echo number_format($pkg['price']); ?> TZS (<?php echo fmtDuration((int)$pkg['duration_seconds']); ?>)</option>
                         <?php endforeach; ?>
                     </select>
                 </div>

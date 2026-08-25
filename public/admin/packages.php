@@ -18,7 +18,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 try {
                     $id = createPackage(
                         $_POST['name'] ?? '',
-                        $_POST['slug'] ?? '',
                         intval($_POST['duration_seconds'] ?? 0),
                         floatval($_POST['price'] ?? 0),
                         !empty($_POST['bandwidth_mbps']) ? intval($_POST['bandwidth_mbps']) : null,
@@ -180,7 +179,7 @@ $pageTitle = 'Packages';
                     <div class="table-wrapper">
                         <table class="data-table">
                             <thead>
-                                <tr><th>Name</th><th>Slug</th><th>Duration</th><th>Price (TZS)</th><th>Bandwidth</th><th>Quota</th><th>Status</th><th>Actions</th></tr>
+                                <tr><th>Name</th><th>Duration</th><th>Price (TZS)</th><th>Bandwidth</th><th>Quota</th><th>Status</th><th>Actions</th></tr>
                             </thead>
                             <tbody>
                                 <?php foreach ($packages as $pkg): ?>
@@ -189,7 +188,6 @@ $pageTitle = 'Packages';
                                         <strong><?php echo htmlspecialchars($pkg['name']); ?></strong>
                                         <?php if ($pkg['description']): ?><br><small style="color: var(--text-tertiary);"><?php echo htmlspecialchars($pkg['description']); ?></small><?php endif; ?>
                                     </td>
-                                    <td class="code-cell"><?php echo htmlspecialchars($pkg['slug']); ?></td>
                                     <td><?php echo formatDuration((int)$pkg['duration_seconds']); ?></td>
                                     <td style="font-weight: 600; color: var(--color-secondary);"><?php echo number_format($pkg['price']); ?></td>
                                     <td><?php echo $pkg['bandwidth_mbps'] ? $pkg['bandwidth_mbps'] . ' Mbps' : '—'; ?></td>
@@ -233,16 +231,9 @@ $pageTitle = 'Packages';
             <form method="POST" action="">
                 <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($csrf); ?>">
                 <input type="hidden" name="action" value="create">
-                <div class="form-row">
-                    <div class="form-group">
-                        <label for="name">Package Name *</label>
-                        <input type="text" id="name" name="name" class="form-input" required placeholder="1 Day" oninput="autoSlug(this)">
-                    </div>
-                    <div class="form-group">
-                        <label for="slug">Slug (URL) *</label>
-                        <input type="text" id="slug" name="slug" class="form-input" required placeholder="1_day" pattern="[a-z0-9_]+">
-                        <div class="form-hint">Lowercase letters, numbers, and _ only. Used as an identifier.</div>
-                    </div>
+                <div class="form-group">
+                    <label for="name">Package Name *</label>
+                    <input type="text" id="name" name="name" class="form-input" required placeholder="1 Day">
                 </div>
                 <div class="form-row">
                     <div class="form-group">
@@ -309,14 +300,6 @@ $pageTitle = 'Packages';
         function openCreateModal() { document.getElementById('createModal').classList.add('open'); }
         function closeCreateModal() { document.getElementById('createModal').classList.remove('open'); }
         document.getElementById('createModal').addEventListener('click', function(e) { if (e.target === this) closeCreateModal(); });
-
-        function autoSlug(nameInput) {
-            var slug = nameInput.value.toLowerCase()
-                .replace(/[^a-z0-9\s_]/g, '')
-                .replace(/\s+/g, '_')
-                .substring(0, 30);
-            document.getElementById('slug').value = slug;
-        }
 
         function openEditModal(pkg) {
             document.getElementById('edit_id').value = pkg.id;

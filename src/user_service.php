@@ -64,7 +64,7 @@ function createSeller(string $username, string $password, ?string $fullName, ?st
     // Insert
     $stmt = $db->prepare("
         INSERT INTO users (role, username, full_name, phone, password_hash, is_active, created_by)
-        VALUES ('seller', :username, :full_name, :phone, :password_hash, 1, :created_by)
+        VALUES ('seller', :username, :full_name, :phone, :password_hash, true, :created_by)
     ");
     $stmt->execute([
         ':username'      => $username,
