@@ -21,12 +21,14 @@
             userMenuTrigger.setAttribute('aria-expanded', 'false');
         };
         userMenuTrigger.addEventListener('click', function (e) {
+            e.preventDefault();
             e.stopPropagation();
             var isOpen = userMenuDropdown.classList.toggle('open');
             userMenuTrigger.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
         });
         document.addEventListener('click', function (e) {
-            if (!userMenuDropdown.contains(e.target) && e.target !== userMenuTrigger) closeMenu();
+            var menu = e.target && e.target.closest ? e.target.closest('.user-menu') : null;
+            if (!menu) closeMenu();
         });
         document.addEventListener('keydown', function (e) {
             if (e.key === 'Escape') closeMenu();
