@@ -3,6 +3,7 @@ require_once dirname(__DIR__, 2) . '/src/auth.php';
 require_once dirname(__DIR__, 2) . '/src/sales_service.php';
 require_once dirname(__DIR__, 2) . '/src/user_service.php';
 require_once dirname(__DIR__, 2) . '/src/package_service.php';
+require_once dirname(__DIR__, 2) . '/src/voucher_service.php';
 startAppSession();
 requireAdmin();
 
@@ -16,20 +17,18 @@ $db = getDB();
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!validateCSRFToken($_POST['csrf_token'] ?? '')) { $error = 'Invalid request.'; }
     else {
-        $voucherCode = strtoupper(trim($_POST['voucher_code'] ?? ''));
-        if (empty($voucherCode)) { $error = 'Choose a voucher.'; }
+        $voucherId = intval($_POST['voucher_id'] ?? 0);
+        $voucher = $voucherId > 0 ? getUnsoldVoucherById($voucherId) : null;
+        if (!$voucher) { $error = 'Choose a voucher.'; }
         else {
             try {
-                $vStmt = $db->prepare("SELECT seller_id FROM vouchers WHERE code = :code");
-                $vStmt->execute([':code' => $voucherCode]);
-                $vRow = $vStmt->fetch();
-                $targetSellerId = ($vRow && $vRow['seller_id'] !== null) ? (int) $vRow['seller_id'] : (int) $adminUserId;
+                $targetSellerId = ($voucher['seller_id'] !== null) ? (int) $voucher['seller_id'] : (int) $adminUserId;
 
-                $saleId = recordSale($voucherCode, $targetSellerId, trim($_POST['buyer_phone'] ?? '') ?: null, trim($_POST['buyer_name'] ?? '') ?: null, !empty($_POST['custom_price']) ? floatval($_POST['custom_price']) : null);
+                $saleId = recordSale($voucher['code'], $targetSellerId, trim($_POST['buyer_phone'] ?? '') ?: null, trim($_POST['buyer_name'] ?? '') ?: null, !empty($_POST['custom_price']) ? floatval($_POST['custom_price']) : null);
                 $sStmt = $db->prepare("SELECT * FROM sales WHERE id = :id");
                 $sStmt->execute([':id' => $saleId]);
                 $lastSale = $sStmt->fetch();
-                $success = "Sale recorded: $voucherCode";
+                $success = 'Sale recorded.';
             } catch (Exception $e) { $error = $e->getMessage(); }
         }
     }
@@ -37,7 +36,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 // ── Voucher stock available for a new sale ──────────────────────
 $stockStmt = $db->prepare("
-    SELECT v.code, v.plan_name, v.price, v.seller_id, u.username AS seller_username
+    SELECT v.id, v.code, v.plan_name, v.price, v.seller_id, u.username AS seller_username
     FROM vouchers v
     LEFT JOIN users u ON u.id = v.seller_id
     WHERE v.status = 'unused' AND v.code NOT IN (SELECT voucher_code FROM sales WHERE voucher_code = v.code)
@@ -87,7 +86,19 @@ $pageTitle = 'Sales';
             </div>
 
             <?php if ($success && $lastSale): ?>
-                <div class="alert alert-success"><span><?php echo htmlspecialchars($success); ?> — <?php echo htmlspecialchars($lastSale['plan_name']); ?>, <?php echo number_format($lastSale['price']); ?> TZS<?php echo $lastSale['buyer_name'] ? ' — ' . htmlspecialchars($lastSale['buyer_name']) : ''; ?></span></div>
+                <div class="confirmation-card">
+                    <div class="confirm-icon">✓</div>
+                    <div class="confirm-title"><?php echo htmlspecialchars($success); ?> Give this code to the customer.</div>
+                    <?php echo renderVoucherCode($lastSale['voucher_code'], true, 'reveal'); ?>
+                    <div class="confirm-details">
+                        <div class="detail-grid">
+                            <span class="detail-label">Package:</span><span class="detail-value"><?php echo htmlspecialchars($lastSale['plan_name']); ?></span>
+                            <span class="detail-label">Price:</span><span class="detail-value" style="color: var(--color-secondary); font-weight: 600;"><?php echo number_format($lastSale['price']); ?> TZS</span>
+                            <?php if ($lastSale['buyer_name']): ?><span class="detail-label">Customer:</span><span class="detail-value"><?php echo htmlspecialchars($lastSale['buyer_name']); ?></span><?php endif; ?>
+                            <?php if ($lastSale['buyer_phone']): ?><span class="detail-label">Phone:</span><span class="detail-value"><?php echo htmlspecialchars($lastSale['buyer_phone']); ?></span><?php endif; ?>
+                        </div>
+                    </div>
+                </div>
             <?php endif; ?>
             <?php if ($error): ?><div class="alert alert-error"><span><?php echo htmlspecialchars($error); ?></span></div><?php endif; ?>
 
@@ -159,7 +170,7 @@ $pageTitle = 'Sales';
                                 <tr><td colspan="7" style="text-align: center; color: var(--text-tertiary); padding: var(--space-8);">No sales</td></tr>
                             <?php else: foreach ($sales as $sale): ?>
                             <tr>
-                                <td class="code-cell"><?php echo htmlspecialchars($sale['voucher_code']); ?></td>
+                                <td><?php echo renderVoucherCode($sale['voucher_code'], true); ?></td>
                                 <td><?php echo htmlspecialchars($sale['plan_name']); ?></td>
                                 <td style="font-weight: 600;"><?php echo number_format($sale['price']); ?></td>
                                 <td><?php echo htmlspecialchars($sale['buyer_name'] ?? '—'); ?></td>
@@ -195,12 +206,12 @@ $pageTitle = 'Sales';
             <form method="POST" action="" data-confirm="Record this sale?" data-confirm-tone="neutral">
                 <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($csrf); ?>">
                 <div class="form-group">
-                    <label for="voucher_code">Choose Voucher</label>
-                    <select name="voucher_code" id="voucher_code" class="form-select" required onchange="updatePrice(this)">
+                    <label for="voucher_id">Choose Voucher</label>
+                    <select name="voucher_id" id="voucher_id" class="form-select" required onchange="updatePrice(this)">
                         <option value="">Select a voucher...</option>
                         <?php $grouped = []; foreach ($stockVouchers as $v) { $grouped[$v['plan_name']][] = $v; } foreach ($grouped as $pn => $vs): ?>
                             <optgroup label="<?php echo htmlspecialchars($pn); ?> (<?php echo count($vs); ?>)">
-                                <?php foreach ($vs as $v): ?><option value="<?php echo htmlspecialchars($v['code']); ?>" data-price="<?php echo $v['price']; ?>" data-plan="<?php echo htmlspecialchars($pn); ?>"><?php echo htmlspecialchars($v['code']); ?><?php echo $v['seller_username'] ? ' — ' . htmlspecialchars($v['seller_username']) : ''; ?></option><?php endforeach; ?>
+                                <?php foreach ($vs as $v): ?><option value="<?php echo (int) $v['id']; ?>" data-price="<?php echo $v['price']; ?>" data-plan="<?php echo htmlspecialchars($pn); ?>"><?php echo htmlspecialchars(maskVoucherCode($v['code'])); ?><?php echo $v['seller_username'] ? ' — ' . htmlspecialchars($v['seller_username']) : ''; ?></option><?php endforeach; ?>
                             </optgroup>
                         <?php endforeach; ?>
                     </select>

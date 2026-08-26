@@ -123,4 +123,34 @@
             showConfirmDialog(form.getAttribute('data-confirm'), form.getAttribute('data-confirm-tone'), form);
         }
     }, true);
+
+    // ── Copy to clipboard (sold voucher codes) ──
+    document.addEventListener('click', function (e) {
+        var btn = e.target && e.target.closest ? e.target.closest('[data-copy]') : null;
+        if (!btn) return;
+        var text = btn.getAttribute('data-copy') || '';
+        if (!text) return;
+        var label = btn.textContent;
+        var done = function () {
+            btn.textContent = 'Copied!';
+            btn.classList.add('copied');
+            setTimeout(function () {
+                btn.textContent = label;
+                btn.classList.remove('copied');
+            }, 2000);
+        };
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text).then(done).catch(function () {});
+            return;
+        }
+        var area = document.createElement('textarea');
+        area.value = text;
+        area.setAttribute('readonly', '');
+        area.style.position = 'absolute';
+        area.style.left = '-9999px';
+        document.body.appendChild(area);
+        area.select();
+        try { document.execCommand('copy'); done(); } catch (err) {}
+        document.body.removeChild(area);
+    });
 })();

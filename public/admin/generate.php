@@ -15,18 +15,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!validateCSRFToken($_POST['csrf_token'] ?? '')) { $error = 'Invalid request.'; }
     else {
         $postAction = $_POST['action'] ?? 'generate';
-        if ($postAction === 'expire' && isset($_POST['code'])) {
-            $code = preg_replace('/[^A-Z0-9]/', '', $_POST['code']);
-            if (!empty($code)) { forceExpireVoucher($code); $message = "Voucher $code expired."; }
-        } elseif ($postAction === 'release_mac' && isset($_POST['code'])) {
-            $code = preg_replace('/[^A-Z0-9]/', '', $_POST['code']);
-            if (!empty($code)) {
-                if (releaseVoucherDevice($code)) {
-                    writeAuditLog('voucher_release_device', getCurrentUserId(), 'voucher', $code);
-                    $message = "Voucher $code released — it can now be used on a new device.";
-                } else {
-                    $error = "Voucher $code is not active or was not found.";
-                }
+        if ($postAction === 'expire' && isset($_POST['voucher_id'])) {
+            $voucher = getVoucherById((int) $_POST['voucher_id']);
+            if ($voucher) {
+                forceExpireVoucher($voucher['code']);
+                $message = 'Voucher expired.';
+            } else {
+                $error = 'Voucher was not found.';
+            }
+        } elseif ($postAction === 'release_mac' && isset($_POST['voucher_id'])) {
+            $voucher = getVoucherById((int) $_POST['voucher_id']);
+            if ($voucher && releaseVoucherDevice($voucher['code'])) {
+                writeAuditLog('voucher_release_device', getCurrentUserId(), 'voucher', (string) $voucher['id']);
+                $message = 'Voucher released — it can now be used on a new device.';
+            } else {
+                $error = 'Voucher is not active or was not found.';
             }
         } else {
             $planId = intval($_POST['plan'] ?? 0);
@@ -95,20 +98,11 @@ $pageTitle = 'Vouchers';
             <?php if (!empty($generated)): ?>
             <div class="admin-card">
                 <div class="admin-card-header"><h2 class="admin-card-title">Generated Vouchers</h2></div>
-                <div class="alert alert-success"><span>Successfully generated <strong><?php echo count($generated); ?></strong> voucher(s). Added to stock — record the sale on the <a href="/admin/sales.php">Sales</a> page when sold.</span></div>
+                <div class="alert alert-success"><span>Successfully generated <strong><?php echo count($generated); ?></strong> voucher(s). Numbers stay hidden until sold — record the sale on the <a href="/admin/sales.php">Sales</a> page to reveal a code.</span></div>
                 <div class="code-list">
-                    <div class="code-list-title">Generated Vouchers</div>
-                    <?php foreach ($generated as $code): ?><div class="code-item"><span><?php echo htmlspecialchars($code); ?></span><button class="copy-btn" onclick="copyCode('<?php echo $code; ?>', this)">Copy</button></div><?php endforeach; ?>
+                    <div class="code-list-title">Added to stock (hidden until sold)</div>
+                    <?php foreach ($generated as $code): ?><div class="code-item"><span class="code-masked"><?php echo htmlspecialchars(maskVoucherCode($code)); ?></span></div><?php endforeach; ?>
                 </div>
-                <div class="action-buttons">
-                    <button class="btn btn-secondary btn-small" onclick="copyAll()">Copy All</button>
-                    <button class="btn btn-secondary btn-small" onclick="downloadCSV()">CSV</button>
-                </div>
-                <script>
-                    function copyCode(c,b){navigator.clipboard.writeText(c).then(function(){b.textContent='Copied!';b.classList.add('copied');setTimeout(function(){b.textContent='Copy';b.classList.remove('copied');},2000);});}
-                    function copyAll(){var c=<?php echo json_encode($generated);?>;navigator.clipboard.writeText(c.join('\n')).then(function(){alert('All copied!');});}
-                    function downloadCSV(){var c=<?php echo json_encode($generated);?>,p='<?php echo addslashes($planKey);?>';var v='Code,Package\n';c.forEach(function(x){v+=x+','+p+'\n';});var b=new Blob([v],{type:'text/csv'});var a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='vouchers_<?php echo date('Y-m-d_His');?>.csv';a.click();}
-                </script>
             </div>
             <?php endif; ?>
 
@@ -161,7 +155,7 @@ $pageTitle = 'Vouchers';
                                 <tr><td colspan="7" style="text-align: center; color: var(--text-tertiary); padding: var(--space-8);">No vouchers</td></tr>
                             <?php else: foreach ($vouchers as $v): ?>
                             <tr>
-                                <td class="code-cell"><?php echo htmlspecialchars($v['code']); ?></td>
+                                <td><?php echo renderVoucherCode($v['code'], voucherIsSold($v)); ?></td>
                                 <td><?php echo htmlspecialchars($v['plan_name']); ?></td>
                                 <td><span class="badge badge-<?php echo $v['status']; ?>"><?php echo $v['status']==='unused'?'Unused':'Active'; ?></span></td>
                                 <td style="font-size: var(--text-sm);"><?php echo date('d/m H:i', strtotime($v['created_at'])); ?></td>
@@ -169,9 +163,9 @@ $pageTitle = 'Vouchers';
                                 <td style="font-size: var(--text-sm);"><?php echo $v['expires_at'] ? date('d/m H:i', strtotime($v['expires_at'])) : '—'; ?></td>
                                 <td>
                                     <?php if ($v['status'] === 'active'): ?>
-                                        <form method="POST" style="display: inline;" data-confirm="End this voucher? The user will be disconnected."><input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($csrf); ?>"><input type="hidden" name="action" value="expire"><input type="hidden" name="code" value="<?php echo htmlspecialchars($v['code']); ?>"><button type="submit" class="btn btn-tiny btn-danger">End</button></form>
+                                        <form method="POST" style="display: inline;" data-confirm="End this voucher? The user will be disconnected."><input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($csrf); ?>"><input type="hidden" name="action" value="expire"><input type="hidden" name="voucher_id" value="<?php echo (int) $v['id']; ?>"><button type="submit" class="btn btn-tiny btn-danger">End</button></form>
                                         <?php if (!empty($v['first_mac'])): ?>
-                                        <form method="POST" style="display: inline;" data-confirm="Release this voucher from its current device? It will then be usable on a new device without losing remaining time."><input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($csrf); ?>"><input type="hidden" name="action" value="release_mac"><input type="hidden" name="code" value="<?php echo htmlspecialchars($v['code']); ?>"><button type="submit" class="btn btn-tiny btn-secondary" title="Bound to <?php echo htmlspecialchars($v['first_mac']); ?>">Release device</button></form>
+                                        <form method="POST" style="display: inline;" data-confirm="Release this voucher from its current device? It will then be usable on a new device without losing remaining time."><input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($csrf); ?>"><input type="hidden" name="action" value="release_mac"><input type="hidden" name="voucher_id" value="<?php echo (int) $v['id']; ?>"><button type="submit" class="btn btn-tiny btn-secondary" title="Bound to <?php echo htmlspecialchars($v['first_mac']); ?>">Release device</button></form>
                                         <?php endif; ?>
                                     <?php else: ?><span style="color: var(--text-tertiary);">—</span><?php endif; ?>
                                 </td>

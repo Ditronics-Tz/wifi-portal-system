@@ -2,6 +2,7 @@
 require_once dirname(__DIR__, 2) . '/src/auth.php';
 require_once dirname(__DIR__, 2) . '/src/sales_service.php';
 require_once dirname(__DIR__, 2) . '/src/user_service.php';
+require_once dirname(__DIR__, 2) . '/src/voucher_service.php';
 startAppSession();
 requireAdmin();
 
@@ -140,7 +141,7 @@ $pageTitle = 'Analytics';
                         <tbody>
                             <?php foreach ($recentSales as $sale): ?>
                             <tr>
-                                <td class="code-cell"><?php echo htmlspecialchars($sale['voucher_code']); ?></td>
+                                <td><?php echo renderVoucherCode($sale['voucher_code'], true); ?></td>
                                 <td><?php echo htmlspecialchars($sale['plan_name']); ?></td>
                                 <td style="font-weight: 500;"><?php echo number_format($sale['price']); ?></td>
                                 <td style="font-weight: 500;"><?php echo htmlspecialchars($sale['seller_username']); ?></td>

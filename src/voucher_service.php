@@ -259,6 +259,83 @@ function getVoucherByCode(string $code): ?array {
     return $row ?: null;
 }
 
+/**
+ * Look up a voucher by id.
+ */
+function getVoucherById(int $id): ?array {
+    if ($id <= 0) {
+        return null;
+    }
+    $db = getDB();
+    $stmt = $db->prepare("SELECT * FROM vouchers WHERE id = :id");
+    $stmt->execute([':id' => $id]);
+    $row = $stmt->fetch();
+    return $row ?: null;
+}
+
+/**
+ * Unused voucher that has not been sold yet. Optionally scoped to a seller.
+ */
+function getUnsoldVoucherById(int $id, ?int $sellerId = null): ?array {
+    if ($id <= 0) {
+        return null;
+    }
+    $db = getDB();
+    $sql = "
+        SELECT v.id, v.code, v.plan_name, v.price, v.seller_id, v.status
+        FROM vouchers v
+        WHERE v.id = :id
+          AND v.status = 'unused'
+          AND NOT EXISTS (SELECT 1 FROM sales s WHERE s.voucher_code = v.code)
+    ";
+    $params = [':id' => $id];
+    if ($sellerId !== null) {
+        $sql .= " AND v.seller_id = :seller_id";
+        $params[':seller_id'] = $sellerId;
+    }
+    $stmt = $db->prepare($sql);
+    $stmt->execute($params);
+    $row = $stmt->fetch();
+    return $row ?: null;
+}
+
+/**
+ * Mask an unsold voucher PIN, e.g. 4821937460 → 4821••••••
+ */
+function maskVoucherCode(string $code): string {
+    $len = strlen($code);
+    if ($len <= 4) {
+        return str_repeat('•', max($len, 1));
+    }
+    return substr($code, 0, 4) . str_repeat('•', $len - 4);
+}
+
+/**
+ * Whether a voucher row from getVouchers() has a matching sales record.
+ */
+function voucherIsSold(array $voucher): bool {
+    $flag = $voucher['is_sold'] ?? 0;
+    return $flag === true || $flag === 1 || $flag === '1' || $flag === 't';
+}
+
+/**
+ * Render a voucher code for admin/seller UI.
+ * Unsold codes are masked with no copy control. Sold codes show in full with Copy.
+ *
+ * @param string $size 'inline' for tables, 'reveal' for the post-sale confirmation
+ */
+function renderVoucherCode(string $code, bool $revealed, string $size = 'inline'): string {
+    if (!$revealed) {
+        return '<span class="code-cell code-masked">' . htmlspecialchars(maskVoucherCode($code), ENT_QUOTES, 'UTF-8') . '</span>';
+    }
+    $safe = htmlspecialchars($code, ENT_QUOTES, 'UTF-8');
+    $btn = '<button type="button" class="copy-btn" data-copy="' . $safe . '">Copy</button>';
+    if ($size === 'reveal') {
+        return '<div class="voucher-code-reveal"><span class="voucher-code-full">' . $safe . '</span>' . $btn . '</div>';
+    }
+    return '<span class="voucher-code-wrap"><span class="code-cell">' . $safe . '</span>' . $btn . '</span>';
+}
+
 // ─── Admin functions below (unchanged) ────────────────────────────
 
 /**
@@ -362,29 +439,31 @@ function generateVouchers(string $packageName, int $durationSec, float $price, i
 function getVouchers(?string $status = null, ?string $search = null, ?int $sellerId = null, ?string $planName = null, int $limit = 100, int $offset = 0): array {
     $db = getDB();
 
-    $sql = "SELECT id, code, plan_name, duration_seconds, price, status,
-                   created_at, first_used_at, expires_at, created_by, seller_id, first_mac
-            FROM vouchers WHERE status != 'expired'";
+    $sql = "SELECT v.id, v.code, v.plan_name, v.duration_seconds, v.price, v.status,
+                   v.created_at, v.first_used_at, v.expires_at, v.created_by, v.seller_id, v.first_mac,
+                   CASE WHEN EXISTS (SELECT 1 FROM sales s WHERE s.voucher_code = v.code) THEN 1 ELSE 0 END AS is_sold
+            FROM vouchers v
+            WHERE v.status != 'expired'";
     $params = [];
 
     if ($status) {
-        $sql .= " AND status = :status";
+        $sql .= " AND v.status = :status";
         $params[':status'] = $status;
     }
     if ($search) {
-        $sql .= " AND code LIKE :search";
+        $sql .= " AND v.code LIKE :search";
         $params[':search'] = '%' . $search . '%';
     }
     if ($sellerId !== null) {
-        $sql .= " AND seller_id = :seller_id";
+        $sql .= " AND v.seller_id = :seller_id";
         $params[':seller_id'] = $sellerId;
     }
     if ($planName) {
-        $sql .= " AND plan_name = :plan_name";
+        $sql .= " AND v.plan_name = :plan_name";
         $params[':plan_name'] = $planName;
     }
 
-    $sql .= " ORDER BY created_at DESC LIMIT :limit OFFSET :offset";
+    $sql .= " ORDER BY v.created_at DESC LIMIT :limit OFFSET :offset";
 
     $stmt = $db->prepare($sql);
     foreach ($params as $key => $value) {

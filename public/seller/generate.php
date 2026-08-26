@@ -85,20 +85,11 @@ function fmtDuration(int $s): string {
                 </div>
                 <?php if ($error): ?><div class="alert alert-error"><span><?php echo htmlspecialchars($error); ?></span></div><?php endif; ?>
                 <?php if (!empty($generated)): ?>
-                    <div class="alert alert-success"><span>Successfully generated <strong><?php echo count($generated); ?></strong> voucher(s). Added to your stock — record the sale from <a href="/seller/record-sale.php">Record Sale</a> when sold.</span></div>
+                    <div class="alert alert-success"><span>Successfully generated <strong><?php echo count($generated); ?></strong> voucher(s). Numbers stay hidden until sold — record the sale from <a href="/seller/record-sale.php">Record Sale</a> to reveal a code.</span></div>
                     <div class="code-list">
-                        <div class="code-list-title">Generated Vouchers</div>
-                        <?php foreach ($generated as $code): ?><div class="code-item"><span><?php echo htmlspecialchars($code); ?></span><button class="copy-btn" onclick="copyCode('<?php echo $code; ?>', this)">Copy</button></div><?php endforeach; ?>
+                        <div class="code-list-title">Added to stock (hidden until sold)</div>
+                        <?php foreach ($generated as $code): ?><div class="code-item"><span class="code-masked"><?php echo htmlspecialchars(maskVoucherCode($code)); ?></span></div><?php endforeach; ?>
                     </div>
-                    <div class="action-buttons">
-                        <button class="btn btn-secondary btn-small" onclick="copyAll()">Copy All</button>
-                        <button class="btn btn-secondary btn-small" onclick="downloadCSV()">CSV</button>
-                    </div>
-                    <script>
-                        function copyCode(c,b){navigator.clipboard.writeText(c).then(function(){b.textContent='Copied!';b.classList.add('copied');setTimeout(function(){b.textContent='Copy';b.classList.remove('copied');},2000);});}
-                        function copyAll(){var c=<?php echo json_encode($generated);?>;navigator.clipboard.writeText(c.join('\n')).then(function(){alert('All copied!');});}
-                        function downloadCSV(){var c=<?php echo json_encode($generated);?>,p='<?php echo addslashes($planKey);?>';var v='Code,Package\n';c.forEach(function(x){v+=x+','+p+'\n';});var b=new Blob([v],{type:'text/csv'});var a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='vouchers_<?php echo date('Y-m-d_His');?>.csv';a.click();}
-                    </script>
                     <hr style="border: none; border-top: 1px solid var(--border-subtle); margin: var(--space-6) 0;">
                 <?php endif; ?>
                 <form method="POST" action="">
@@ -115,7 +106,7 @@ function fmtDuration(int $s): string {
                     <div class="form-group">
                         <label for="quantity">Quantity (1-<?php echo SELLER_MAX_GENERATE_QUANTITY; ?>)</label>
                         <input type="number" id="quantity" name="quantity" class="form-number" min="1" max="<?php echo SELLER_MAX_GENERATE_QUANTITY; ?>" value="<?php echo htmlspecialchars($_POST['quantity'] ?? '10'); ?>" required>
-                        <div class="form-hint">Each voucher is added to your stock. Record the sale separately when it's sold.</div>
+                        <div class="form-hint">Each voucher is added to your stock. The full number stays hidden until you record the sale.</div>
                     </div>
                     <button type="submit" class="btn btn-primary" style="max-width: 250px;">Generate Vouchers</button>
                 </form>

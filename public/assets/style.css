@@ -910,10 +910,27 @@ a:hover { text-decoration: underline; }
     background: var(--surface); color: var(--text-secondary);
     border: 1px solid var(--border-default); border-radius: var(--radius-sm);
     cursor: pointer; transition: all var(--transition-fast); font-family: var(--font-sans);
+    flex-shrink: 0;
 }
 
 .copy-btn:hover { background: var(--color-gray-100); }
 .copy-btn.copied { background: var(--color-success-subtle); color: var(--color-success); border-color: #a7f3d0; }
+
+.voucher-code-wrap {
+    display: inline-flex; align-items: center; gap: var(--space-2); white-space: nowrap;
+}
+
+.code-masked { color: var(--text-secondary); letter-spacing: 0.12em; }
+
+.voucher-code-reveal {
+    display: flex; align-items: center; justify-content: center; gap: var(--space-3);
+    margin: var(--space-3) 0 var(--space-1);
+}
+
+.voucher-code-full {
+    font-family: var(--font-mono); font-size: var(--text-xl); font-weight: 700;
+    letter-spacing: 0.14em; color: var(--text-primary);
+}
 
 .action-buttons { display: flex; gap: var(--space-2); margin-top: var(--space-4); }
 

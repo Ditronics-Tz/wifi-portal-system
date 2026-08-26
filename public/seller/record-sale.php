@@ -12,28 +12,29 @@ $success = null;
 $error = null;
 $lastSale = null;
 
-if ($sellerId) {
-    $db = getDB();
-    $stmt = $db->prepare("SELECT v.code, v.plan_name, v.price FROM vouchers v WHERE v.seller_id = :sid AND v.status = 'unused' AND v.code NOT IN (SELECT voucher_code FROM sales WHERE voucher_code = v.code) ORDER BY v.plan_name, v.created_at DESC");
-    $stmt->execute([':sid' => $sellerId]);
-    $stockVouchers = $stmt->fetchAll();
-} else { $stockVouchers = []; }
-
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!validateCSRFToken($_POST['csrf_token'] ?? '')) { $error = 'Invalid request.'; }
     else {
-        $voucherCode = strtoupper(trim($_POST['voucher_code'] ?? ''));
-        if (empty($voucherCode)) { $error = 'Choose a voucher.'; }
+        $voucherId = intval($_POST['voucher_id'] ?? 0);
+        $voucher = ($voucherId > 0 && $sellerId) ? getUnsoldVoucherById($voucherId, $sellerId) : null;
+        if (!$voucher) { $error = 'Choose a voucher.'; }
         elseif (!$sellerId) { $error = 'Seller ID not found.'; }
         else {
             try {
-                $saleId = recordSale($voucherCode, $sellerId, trim($_POST['buyer_phone'] ?? '') ?: null, trim($_POST['buyer_name'] ?? '') ?: null, !empty($_POST['custom_price']) ? floatval($_POST['custom_price']) : null);
+                $saleId = recordSale($voucher['code'], $sellerId, trim($_POST['buyer_phone'] ?? '') ?: null, trim($_POST['buyer_name'] ?? '') ?: null, !empty($_POST['custom_price']) ? floatval($_POST['custom_price']) : null);
                 $db = getDB(); $stmt = $db->prepare("SELECT * FROM sales WHERE id = :id"); $stmt->execute([':id' => $saleId]); $lastSale = $stmt->fetch();
-                $success = "Sale recorded: $voucherCode";
+                $success = 'Sale recorded. Give this code to the customer.';
             } catch (Exception $e) { $error = $e->getMessage(); }
         }
     }
 }
+
+if ($sellerId) {
+    $db = getDB();
+    $stmt = $db->prepare("SELECT v.id, v.code, v.plan_name, v.price FROM vouchers v WHERE v.seller_id = :sid AND v.status = 'unused' AND v.code NOT IN (SELECT voucher_code FROM sales WHERE voucher_code = v.code) ORDER BY v.plan_name, v.created_at DESC");
+    $stmt->execute([':sid' => $sellerId]);
+    $stockVouchers = $stmt->fetchAll();
+} else { $stockVouchers = []; }
 $csrf = generateCSRFToken();
 ?>
 <!DOCTYPE html>
@@ -72,6 +73,7 @@ $csrf = generateCSRFToken();
                 <div class="confirmation-card">
                     <div class="confirm-icon">✓</div>
                     <div class="confirm-title"><?php echo htmlspecialchars($success); ?></div>
+                    <?php echo renderVoucherCode($lastSale['voucher_code'], true, 'reveal'); ?>
                     <div class="confirm-details">
                         <div class="detail-grid">
                             <span class="detail-label">Package:</span><span class="detail-value"><?php echo htmlspecialchars($lastSale['plan_name']); ?></span>
@@ -102,12 +104,12 @@ $csrf = generateCSRFToken();
                 <form method="POST" action="" data-confirm="Record this sale?" data-confirm-tone="neutral">
                     <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($csrf); ?>">
                     <div class="form-group">
-                        <label for="voucher_code">Choose Voucher</label>
-                        <select name="voucher_code" id="voucher_code" class="form-select" required onchange="updatePrice(this)">
+                        <label for="voucher_id">Choose Voucher</label>
+                        <select name="voucher_id" id="voucher_id" class="form-select" required onchange="updatePrice(this)">
                             <option value="">Select a voucher...</option>
                             <?php $grouped = []; foreach ($stockVouchers as $v) { $grouped[$v['plan_name']][] = $v; } foreach ($grouped as $pn => $vs): ?>
                                 <optgroup label="<?php echo htmlspecialchars($pn); ?> (<?php echo count($vs); ?>)">
-                                    <?php foreach ($vs as $v): ?><option value="<?php echo htmlspecialchars($v['code']); ?>" data-price="<?php echo $v['price']; ?>" data-plan="<?php echo htmlspecialchars($pn); ?>"><?php echo htmlspecialchars($v['code']); ?></option><?php endforeach; ?>
+                                    <?php foreach ($vs as $v): ?><option value="<?php echo (int) $v['id']; ?>" data-price="<?php echo $v['price']; ?>" data-plan="<?php echo htmlspecialchars($pn); ?>"><?php echo htmlspecialchars(maskVoucherCode($v['code'])); ?></option><?php endforeach; ?>
                                 </optgroup>
                             <?php endforeach; ?>
                         </select>

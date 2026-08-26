@@ -1,6 +1,7 @@
 <?php
 require_once dirname(__DIR__, 2) . '/src/auth.php';
 require_once dirname(__DIR__, 2) . '/src/sales_service.php';
+require_once dirname(__DIR__, 2) . '/src/voucher_service.php';
 startAppSession();
 requireSellerOrAdmin();
 
@@ -66,7 +67,7 @@ $periodStats = $sellerId ? getSellerAllTimeStats($sellerId) : ['total_sales' => 
                             <?php if (empty($sales)): ?><tr><td colspan="6" style="text-align: center; color: var(--text-tertiary); padding: var(--space-8);">No sales</td></tr>
                             <?php else: foreach ($sales as $sale): ?>
                             <tr>
-                                <td class="code-cell"><?php echo htmlspecialchars($sale['voucher_code']); ?></td>
+                                <td><?php echo renderVoucherCode($sale['voucher_code'], true); ?></td>
                                 <td><?php echo htmlspecialchars($sale['plan_name']); ?></td>
                                 <td style="font-weight: 500;"><?php echo number_format($sale['price']); ?></td>
                                 <td style="font-size: var(--text-sm);"><?php echo date('d/m/Y H:i', strtotime($sale['sold_at'])); ?></td>
@@ -85,5 +86,6 @@ $periodStats = $sellerId ? getSellerAllTimeStats($sellerId) : ['total_sales' => 
             </div>
         </main>
     </div>
+    <script src="/assets/admin.js"></script>
 </body>
 </html>

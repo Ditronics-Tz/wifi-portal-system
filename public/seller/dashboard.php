@@ -90,7 +90,7 @@ $recentSales = $sellerId ? getSellerRecentSales($sellerId, 5) : [];
                         <tbody>
                             <?php foreach ($recentSales as $sale): ?>
                             <tr>
-                                <td class="code-cell"><?php echo htmlspecialchars($sale['voucher_code']); ?></td>
+                                <td><?php echo renderVoucherCode($sale['voucher_code'], true); ?></td>
                                 <td><?php echo htmlspecialchars($sale['plan_name']); ?></td>
                                 <td style="font-weight: 500;"><?php echo number_format($sale['price']); ?></td>
                                 <td style="font-size: var(--text-sm);"><?php echo date('d/m H:i', strtotime($sale['sold_at'])); ?></td>
@@ -103,5 +103,6 @@ $recentSales = $sellerId ? getSellerRecentSales($sellerId, 5) : [];
             </div>
         </main>
     </div>
+    <script src="/assets/admin.js"></script>
 </body>
 </html>

@@ -111,7 +111,7 @@ $pageTitle = 'Dashboard';
                                     <?php foreach ($recentSales as $sale): ?>
                                     <tr>
                                         <td style="font-weight: 500;"><?php echo htmlspecialchars($sale['seller_username']); ?></td>
-                                        <td class="code-cell"><?php echo htmlspecialchars($sale['voucher_code']); ?></td>
+                                <td><?php echo renderVoucherCode($sale['voucher_code'], true); ?></td>
                                         <td style="font-weight: 600;"><?php echo number_format($sale['price']); ?></td>
                                     </tr>
                                     <?php endforeach; ?>
