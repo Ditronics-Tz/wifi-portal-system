@@ -7,7 +7,7 @@ require_once dirname(__DIR__, 2) . '/src/voucher_service.php';
 startAppSession();
 requireAdmin();
 
-$adminUserId = getCurrentUserId() ?: null;
+$adminUserId = ensureCurrentUserId();
 $success = null;
 $error = null;
 $lastSale = null;
@@ -22,7 +22,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (!$voucher) { $error = 'Choose a voucher.'; }
         else {
             try {
-                $targetSellerId = ($voucher['seller_id'] !== null) ? (int) $voucher['seller_id'] : (int) $adminUserId;
+                $assignedSellerId = (int) ($voucher['seller_id'] ?? 0);
+                $targetSellerId = $assignedSellerId > 0 ? $assignedSellerId : (int) ($adminUserId ?? 0);
+                if ($targetSellerId <= 0) {
+                    throw new Exception('Could not record the sale: this admin account is not linked to a user record.');
+                }
 
                 $saleId = recordSale($voucher['code'], $targetSellerId, trim($_POST['buyer_phone'] ?? '') ?: null, trim($_POST['buyer_name'] ?? '') ?: null, !empty($_POST['custom_price']) ? floatval($_POST['custom_price']) : null);
                 $sStmt = $db->prepare("SELECT * FROM sales WHERE id = :id");

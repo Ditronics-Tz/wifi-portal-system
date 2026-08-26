@@ -60,8 +60,19 @@ function recordSale(
             throw new Exception('This voucher has already been sold.');
         }
 
-        // Verify seller owns this voucher (or is admin — handled by caller)
-        if ($voucher['seller_id'] !== null && (int) $voucher['seller_id'] !== $sellerId) {
+        if ($sellerId <= 0) {
+            throw new Exception('Sale must be linked to a staff or admin account.');
+        }
+
+        $userCheck = $db->prepare("SELECT id FROM users WHERE id = :id");
+        $userCheck->execute([':id' => $sellerId]);
+        if (!$userCheck->fetch()) {
+            throw new Exception('Sale must be linked to a staff or admin account.');
+        }
+
+        // Verify seller owns this voucher (0/null = admin stock, allowed)
+        $voucherSellerId = (int) ($voucher['seller_id'] ?? 0);
+        if ($voucherSellerId > 0 && $voucherSellerId !== $sellerId) {
             throw new Exception('This voucher does not belong to you.');
         }
 

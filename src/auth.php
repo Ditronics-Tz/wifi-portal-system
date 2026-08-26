@@ -110,11 +110,77 @@ function getCurrentRole(): ?string {
 }
 
 /**
- * Get current user's ID (null for config-based admin)
+ * Get current user's ID (null for config-based admin until a users row is linked)
  */
 function getCurrentUserId(): ?int {
     startAppSession();
-    return isset($_SESSION['user_id']) ? (int) $_SESSION['user_id'] : null;
+    if (!isset($_SESSION['user_id'])) {
+        return null;
+    }
+    $id = (int) $_SESSION['user_id'];
+    return $id > 0 ? $id : null;
+}
+
+/**
+ * User ID for FK writes (sales, created_by). Config-based admin has no session
+ * user_id until a matching users row is found or created.
+ */
+function ensureCurrentUserId(): ?int {
+    $existing = getCurrentUserId();
+    if ($existing !== null) {
+        return $existing;
+    }
+
+    if (getCurrentRole() !== 'admin') {
+        return null;
+    }
+
+    $username = getCurrentUsername();
+    if ($username === '' || $username === 'unknown') {
+        return null;
+    }
+
+    $db = getDB();
+    $stmt = $db->prepare("SELECT id FROM users WHERE username = :u AND role = 'admin'");
+    $stmt->execute([':u' => $username]);
+    $row = $stmt->fetch();
+    if ($row) {
+        $_SESSION['user_id'] = (int) $row['id'];
+        return (int) $row['id'];
+    }
+
+    if (!defined('ADMIN_USERNAME') || $username !== ADMIN_USERNAME || !defined('ADMIN_PASSWORD_HASH')) {
+        return null;
+    }
+
+    try {
+        $stmt = $db->prepare("
+            INSERT INTO users (role, username, full_name, password_hash, is_active)
+            VALUES ('admin', :username, :full_name, :password_hash, true)
+            RETURNING id
+        ");
+        $stmt->execute([
+            ':username'      => $username,
+            ':full_name'     => 'Administrator',
+            ':password_hash' => ADMIN_PASSWORD_HASH,
+        ]);
+        $id = (int) $stmt->fetchColumn();
+        if ($id > 0) {
+            $_SESSION['user_id'] = $id;
+            return $id;
+        }
+    } catch (Exception $e) {
+        $stmt = $db->prepare("SELECT id FROM users WHERE username = :u AND role = 'admin'");
+        $stmt->execute([':u' => $username]);
+        $row = $stmt->fetch();
+        if ($row) {
+            $_SESSION['user_id'] = (int) $row['id'];
+            return (int) $row['id'];
+        }
+        error_log('ensureCurrentUserId failed: ' . $e->getMessage());
+    }
+
+    return null;
 }
 
 /**
@@ -188,8 +254,9 @@ function attemptAdminLogin(string $username, string $password): bool {
             $_SESSION['user_role']       = 'admin';
             $_SESSION['last_activity']   = time();
 
+            $linkedId = ensureCurrentUserId();
             clearLoginAttempts($username);
-            writeAuditLog('admin_login', null, 'admin', $username);
+            writeAuditLog('admin_login', $linkedId, 'admin', $username);
             return true;
         }
     }
