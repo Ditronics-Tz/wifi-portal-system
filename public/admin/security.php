@@ -30,7 +30,7 @@ $pageTitle = 'Security events';
                 <form method="GET" class="filters-bar">
                     <select name="type" class="filter-select">
                         <option value="">All types</option>
-                        <?php foreach (['VOUCHER_REUSE','SESSION_LIMIT','MULTIPLE_DEVICE','EXPIRED_VOUCHER','INVALID_VOUCHER','SESSION_STARTED','DEVICE_RELEASED'] as $t): ?>
+                        <?php foreach (['VOUCHER_REUSE','SESSION_LIMIT','MULTIPLE_DEVICE','VOUCHER_SUSPENDED','EXPIRED_VOUCHER','INVALID_VOUCHER','SESSION_STARTED','DEVICE_RELEASED'] as $t): ?>
                             <option value="<?php echo $t; ?>" <?php echo $typeFilter === $t ? 'selected' : ''; ?>><?php echo $t; ?></option>
                         <?php endforeach; ?>
                     </select>

@@ -1,4 +1,4 @@
         </main>
     </div>
 </div>
-<script src="/assets/admin.js"></script>
+<script src="<?php echo htmlspecialchars(assetUrl('/assets/admin.js')); ?>"></script>

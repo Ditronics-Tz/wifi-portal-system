@@ -5,6 +5,7 @@
  */
 
 require_once __DIR__ . '/db.php';
+require_once __DIR__ . '/radius_client.php';
 
 function recordSecurityEvent(
     string $eventType,
@@ -258,12 +259,65 @@ function detectSharingFromRadacct(): void {
         if ($recent->fetch()) {
             continue;
         }
+
+        // Kick the extra session. radius_disconnect() targets the most
+        // recently started radacct session for this username, i.e. the
+        // intruding device rather than the originally bound one.
+        $disconnect = radius_disconnect($code);
+
         recordSecurityEvent($type, 'high', $code, null, [
             'live_sessions' => (int) $row['live_sessions'],
             'distinct_macs' => (int) $row['distinct_macs'],
             'source'        => 'radacct',
+            'action'        => $disconnect['success'] ? 'disconnected' : 'coa_failed',
+            'action_detail' => $disconnect['message'] ?? null,
         ]);
+
+        // Repeated violations for the same voucher within the last hour ->
+        // suspend it outright instead of only kicking the extra session.
+        $repeat = $db->prepare("
+            SELECT COUNT(*) FROM security_events
+            WHERE voucher_code = :code AND event_type = :type
+              AND created_at > NOW() - INTERVAL '1 hour'
+        ");
+        $repeat->execute([':code' => $code, ':type' => $type]);
+        if ((int) $repeat->fetchColumn() >= 2) {
+            suspendVoucherForSharing($code);
+        }
     }
+}
+
+/**
+ * Suspend a voucher after repeated sharing detections: stop it from
+ * authenticating again and disconnect any live session.
+ */
+function suspendVoucherForSharing(string $code): void {
+    $db = getDB();
+    $stmt = $db->prepare("SELECT id, status FROM vouchers WHERE code = :code");
+    $stmt->execute([':code' => $code]);
+    $voucher = $stmt->fetch();
+    if (!$voucher || $voucher['status'] === 'expired') {
+        return;
+    }
+
+    $db->prepare("UPDATE vouchers SET status = 'expired' WHERE id = :id")
+        ->execute([':id' => $voucher['id']]);
+    closeVoucherSessions((int) $voucher['id'], 'auto_suspend_sharing', 'blocked');
+
+    // Force FreeRADIUS to reject future auth attempts for this code,
+    // independent of the still-valid Cleartext-Password row.
+    $stmt = $db->prepare("SELECT id FROM radcheck WHERE username = :u AND attribute = 'Auth-Type'");
+    $stmt->execute([':u' => $code]);
+    if ($stmt->fetch()) {
+        $db->prepare("UPDATE radcheck SET value = 'Reject', op = ':=' WHERE username = :u AND attribute = 'Auth-Type'")
+            ->execute([':u' => $code]);
+    } else {
+        $db->prepare("INSERT INTO radcheck (username, attribute, op, value) VALUES (:u, 'Auth-Type', ':=', 'Reject')")
+            ->execute([':u' => $code]);
+    }
+
+    radius_disconnect($code);
+    recordSecurityEvent('VOUCHER_SUSPENDED', 'high', $code, null, ['reason' => 'repeated_sharing_detected']);
 }
 
 function countOpenSecurityEvents(): int {

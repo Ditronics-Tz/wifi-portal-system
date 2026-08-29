@@ -22,7 +22,7 @@ $pageTitle = 'Dashboard';
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dashboard - Admin</title>
     <?php require dirname(__DIR__, 2) . '/src/theme_init.php'; ?>
-    <link rel="stylesheet" href="/assets/style.css">
+    <link rel="stylesheet" href="<?php echo htmlspecialchars(assetUrl('/assets/style.css')); ?>">
 </head>
 <body>
 <?php require dirname(__DIR__, 2) . '/src/admin_header.php'; ?>

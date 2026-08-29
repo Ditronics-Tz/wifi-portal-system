@@ -88,6 +88,9 @@ function prepareVoucherForAuth(string $code, ?string $clientMac = null, ?string 
             ]);
 
             applyVoucherRadiusPolicy($code, $voucher['plan_name'], $voucher['duration_seconds']);
+            if ($clientMac) {
+                lockVoucherMacInRadius($code, $clientMac);
+            }
             $sessionId = upsertVoucherSession((int) $voucher['id'], $clientMac, $clientIp, $expiresAtTs);
 
             $db->commit();
@@ -115,6 +118,7 @@ function prepareVoucherForAuth(string $code, ?string $clientMac = null, ?string 
             if ($voucher['first_mac'] === null && $clientMac) {
                 $stmt = $db->prepare("UPDATE vouchers SET first_mac = :mac WHERE id = :id");
                 $stmt->execute([':mac' => $clientMac, ':id' => $voucher['id']]);
+                lockVoucherMacInRadius($code, $clientMac);
             }
 
             $sessionId = upsertVoucherSession(
@@ -192,8 +196,30 @@ function releaseVoucherDevice(string $code): bool {
     closeVoucherSessions((int) $voucherId, 'admin_release');
     $stmt = $db->prepare("UPDATE vouchers SET first_mac = NULL WHERE id = :id");
     $stmt->execute([':id' => $voucherId]);
+    unlockVoucherMacInRadius($code);
     recordSecurityEvent('DEVICE_RELEASED', 'info', $code);
     return true;
+}
+
+/**
+ * Bind a voucher's RADIUS auth to a single MAC via a Calling-Station-Id
+ * check-item, so FreeRADIUS itself rejects a mismatched device even if
+ * a request reaches it without going through the PHP portal page first.
+ * Case-insensitive regex match: AP-reported MAC casing/format for
+ * Calling-Station-Id is not guaranteed to match what the portal captured.
+ */
+function lockVoucherMacInRadius(string $code, string $mac): void {
+    $pattern = '(?i)^' . preg_quote($mac, '/') . '$';
+    upsertRadAttribute('radcheck', $code, 'Calling-Station-Id', $pattern, '=~');
+}
+
+/**
+ * Remove the RADIUS-side MAC lock so the voucher can rebind to a new device.
+ */
+function unlockVoucherMacInRadius(string $code): void {
+    $db = getDB();
+    $stmt = $db->prepare("DELETE FROM radcheck WHERE username = :username AND attribute = 'Calling-Station-Id'");
+    $stmt->execute([':username' => $code]);
 }
 
 function upsertRadAttribute(string $table, string $username, string $attribute, string $value, string $op = ':='): void {
@@ -223,11 +249,24 @@ function upsertRadAttribute(string $table, string $username, string $attribute, 
 }
 
 /**
- * Session-Timeout, Simultaneous-Use, and package bandwidth/quota in RADIUS.
+ * Session-Timeout, Simultaneous-Use, interim-accounting interval, bandwidth
+ * and data-quota policy written to FreeRADIUS tables for this voucher.
+ *
+ * Quota enforcement — two layers:
+ *  1. FreeRADIUS sqlcounter (server-side, real-time): reads Max-All-Octets
+ *     from radcheck and rejects Access-Requests once cumulative bytes >= limit.
+ *     Requires the sqlcounter_quota module (see nginx/freeradius-sqlcounter-quota).
+ *  2. PHP cron (bin/enforce_quota.php, every 1 min): polls radacct, expires
+ *     the voucher in the DB and sends a CoA Disconnect to the AP.
  */
 function applyVoucherRadiusPolicy(string $username, string $planName, int $timeoutSeconds): void {
     upsertRadAttribute('radreply', $username, 'Session-Timeout', (string) max(1, $timeoutSeconds));
     upsertRadAttribute('radcheck', $username, 'Simultaneous-Use', '1', ':=');
+
+    // Tell the AP to send interim accounting packets every 60 s.
+    // Without this the AP only writes to radacct at session start/stop,
+    // making server-side byte-counting unreliable mid-session.
+    upsertRadAttribute('radreply', $username, 'Acct-Interim-Interval', '60');
 
     $pkg = getPackageByName($planName);
     if (!$pkg) {
@@ -237,14 +276,21 @@ function applyVoucherRadiusPolicy(string $username, string $planName, int $timeo
     $mbps = isset($pkg['bandwidth_mbps']) ? (int) $pkg['bandwidth_mbps'] : 0;
     if ($mbps > 0) {
         $bps = (string) ($mbps * 1000000);
+        // WISPr bandwidth attributes — understood by most enterprise APs including TP-Link EAP.
         upsertRadAttribute('radreply', $username, 'WISPr-Bandwidth-Max-Down', $bps);
-        upsertRadAttribute('radreply', $username, 'WISPr-Bandwidth-Max-Up', $bps);
+        upsertRadAttribute('radreply', $username, 'WISPr-Bandwidth-Max-Up',   $bps);
     }
 
     $quotaMb = isset($pkg['data_quota_mb']) ? (int) $pkg['data_quota_mb'] : 0;
     if ($quotaMb > 0) {
         $octets = (string) ($quotaMb * 1024 * 1024);
-        upsertRadAttribute('radreply', $username, 'ChilliSpot-Max-Total-Octets', $octets);
+        // Max-All-Octets is the check attribute consumed by the FreeRADIUS
+        // sqlcounter_quota module.  FreeRADIUS compares cumulative radacct
+        // bytes against this value and rejects auth when exceeded.
+        //
+        // REMOVED: ChilliSpot-Max-Total-Octets — that is a CoovaChilli
+        // vendor-specific attribute that TP-Link EAP650 silently ignores.
+        upsertRadAttribute('radcheck', $username, 'Max-All-Octets', $octets, ':=');
     }
 }
 
@@ -329,7 +375,7 @@ function renderVoucherCode(string $code, bool $revealed, string $size = 'inline'
         return '<span class="code-cell code-masked">' . htmlspecialchars(maskVoucherCode($code), ENT_QUOTES, 'UTF-8') . '</span>';
     }
     $safe = htmlspecialchars($code, ENT_QUOTES, 'UTF-8');
-    $btn = '<button type="button" class="copy-btn" data-copy="' . $safe . '">Copy</button>';
+    $btn = '<button type="button" class="copy-btn" data-copy="' . $safe . '" aria-label="Copy voucher code">Copy</button>';
     if ($size === 'reveal') {
         return '<div class="voucher-code-reveal"><span class="voucher-code-full">' . $safe . '</span>' . $btn . '</div>';
     }

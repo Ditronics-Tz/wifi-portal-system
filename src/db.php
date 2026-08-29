@@ -256,6 +256,15 @@ function validateCSRFToken($token) {
 }
 
 /**
+ * Cache-busted public asset URL (nginx caches JS/CSS as immutable for 1 year).
+ */
+function assetUrl(string $path): string {
+    $full = dirname(__DIR__) . '/public' . $path;
+    $v = is_file($full) ? filemtime($full) : 1;
+    return $path . '?v=' . $v;
+}
+
+/**
  * Write an entry to the audit log
  */
 function writeAuditLog(string $action, ?int $userId = null, ?string $entityType = null, ?string $entityId = null, ?array $details = null): void {

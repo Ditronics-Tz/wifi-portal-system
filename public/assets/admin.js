@@ -125,32 +125,56 @@
     }, true);
 
     // ── Copy to clipboard (sold voucher codes) ──
-    document.addEventListener('click', function (e) {
-        var btn = e.target && e.target.closest ? e.target.closest('[data-copy]') : null;
-        if (!btn) return;
-        var text = btn.getAttribute('data-copy') || '';
-        if (!text) return;
-        var label = btn.textContent;
-        var done = function () {
-            btn.textContent = 'Copied!';
-            btn.classList.add('copied');
-            setTimeout(function () {
-                btn.textContent = label;
-                btn.classList.remove('copied');
-            }, 2000);
+    // navigator.clipboard.writeText requires HTTPS. This portal is often
+    // opened over HTTP (LAN IP / :8090), so always fall back to execCommand
+    // and still show the Copied state on success.
+    function copyTextToClipboard(text, onDone) {
+        var finished = false;
+        var finish = function (ok) {
+            if (finished) return;
+            finished = true;
+            onDone(ok);
         };
-        if (navigator.clipboard && navigator.clipboard.writeText) {
-            navigator.clipboard.writeText(text).then(done).catch(function () {});
+        var legacyCopy = function () {
+            var area = document.createElement('textarea');
+            area.value = text;
+            area.setAttribute('readonly', '');
+            area.setAttribute('aria-hidden', 'true');
+            area.style.cssText = 'position:fixed;top:0;left:0;width:2em;height:2em;padding:0;border:0;outline:none;background:transparent;opacity:0.01;';
+            document.body.appendChild(area);
+            area.focus();
+            area.select();
+            try { area.setSelectionRange(0, text.length); } catch (err) {}
+            var ok = false;
+            try { ok = document.execCommand('copy'); } catch (err) { ok = false; }
+            document.body.removeChild(area);
+            finish(ok);
+        };
+        if (window.isSecureContext && navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text).then(function () { finish(true); }).catch(legacyCopy);
             return;
         }
-        var area = document.createElement('textarea');
-        area.value = text;
-        area.setAttribute('readonly', '');
-        area.style.position = 'absolute';
-        area.style.left = '-9999px';
-        document.body.appendChild(area);
-        area.select();
-        try { document.execCommand('copy'); done(); } catch (err) {}
-        document.body.removeChild(area);
+        legacyCopy();
+    }
+
+    document.addEventListener('click', function (e) {
+        var btn = e.target && e.target.closest ? e.target.closest('[data-copy]') : null;
+        if (!btn || btn.disabled) return;
+        e.preventDefault();
+        var text = btn.getAttribute('data-copy') || '';
+        if (!text) return;
+        if (!btn.getAttribute('data-copy-label')) {
+            btn.setAttribute('data-copy-label', (btn.textContent || 'Copy').trim());
+        }
+        copyTextToClipboard(text, function (ok) {
+            window.clearTimeout(btn._copyTimer);
+            btn.classList.toggle('copied', ok);
+            btn.classList.toggle('copy-failed', !ok);
+            btn.textContent = ok ? 'Copied' : 'Failed';
+            btn._copyTimer = window.setTimeout(function () {
+                btn.textContent = btn.getAttribute('data-copy-label') || 'Copy';
+                btn.classList.remove('copied', 'copy-failed');
+            }, 2000);
+        });
     });
 })();

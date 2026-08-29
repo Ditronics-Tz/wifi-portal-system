@@ -1,10 +1,11 @@
 <?php
 /**
- * Status page — look up remaining time by voucher code.
+ * Status page — remaining time and data usage for a voucher code.
  * Accessible at: status.php?code=XXXX
  */
 
 require_once dirname(__DIR__) . '/src/voucher_service.php';
+require_once dirname(__DIR__) . '/src/quota_service.php';
 
 $code   = isset($_GET['code']) ? strtoupper(trim(preg_replace('/[^A-Za-z0-9]/', '', $_GET['code']))) : '';
 $voucher = null;
@@ -133,24 +134,60 @@ function formatTime(int $seconds): string {
                     <?php endif; ?>
                 </div>
 
-                <?php if ($status === 'active'): ?>
-                <!-- Progress bar -->
+            <?php if ($status === 'active'): ?>
+                <?php
+                    // Fetch data quota status (graceful if radacct is unavailable)
+                    $quotaStatus = getVoucherQuotaStatus($voucher['code'], $voucher['plan_name']);
+                ?>
+                <!-- Time progress bar -->
                 <div class="progress-section">
+                    <div class="progress-label-row" style="display:flex;justify-content:space-between;font-size:.75rem;color:var(--text-tertiary);margin-bottom:4px;">
+                        <span>Time remaining</span>
+                        <span id="progressPercent"><?= round(($remaining / max(1, $remaining + (time() - strtotime($voucher['first_used_at'])))) * 100) ?>%</span>
+                    </div>
                     <div class="progress-track">
                         <div class="progress-fill" id="progressFill"></div>
                     </div>
-                    <div class="progress-text">
-                        <span id="progressPercent"><?= round(($remaining / max(1, $remaining + (time() - strtotime($voucher['first_used_at'])))) * 100) ?>%</span>
-                        <span>time remaining</span>
+                </div>
+
+                <?php if ($quotaStatus['has_quota']): ?>
+                <!-- Data quota progress bar -->
+                <div class="progress-section" style="margin-top:12px;">
+                    <div class="progress-label-row" style="display:flex;justify-content:space-between;font-size:.75rem;color:var(--text-tertiary);margin-bottom:4px;">
+                        <span>Data used</span>
+                        <span><?= $quotaStatus['used_mb'] ?> MB / <?= $quotaStatus['quota_mb'] ?> MB</span>
                     </div>
+                    <div class="progress-track">
+                        <?php
+                            $dataPct = $quotaStatus['percent_used'];
+                            $dataClass = 'progress-fill';
+                            if ($dataPct >= 90)      $dataClass .= ' danger';
+                            elseif ($dataPct >= 70)  $dataClass .= ' warning';
+                        ?>
+                        <div class="<?= $dataClass ?>" style="width:<?= $dataPct ?>%"></div>
+                    </div>
+                    <div style="display:flex;justify-content:space-between;font-size:.72rem;color:var(--text-tertiary);margin-top:4px;">
+                        <span><?= $quotaStatus['remaining_mb'] ?> MB remaining</span>
+                        <span><?= $dataPct ?>% used</span>
+                    </div>
+                    <?php if ($quotaStatus['exceeded']): ?>
+                    <div class="alert alert-error" style="margin-top:8px;padding:8px 12px;font-size:.8rem;">
+                        ⚠️ Data quota exceeded — your session will be terminated shortly.
+                    </div>
+                    <?php endif; ?>
                 </div>
                 <?php endif; ?>
+
+            <?php endif; ?>
 
                 <div class="tips-box">
                     <h3>📋 Info</h3>
                     <ul>
                         <?php if ($status === 'active'): ?>
                         <li>You can use the internet for the full duration of the voucher</li>
+                        <?php if (!empty($quotaStatus['has_quota'])): ?>
+                        <li>This plan includes <strong><?= $quotaStatus['quota_mb'] ?> MB</strong> of data — your session ends when the data or time limit is reached, whichever comes first</li>
+                        <?php endif; ?>
                         <li>To disconnect early, visit: <code>http://portal.tplink.net/portal/logout</code></li>
                         <?php elseif ($status === 'expired'): ?>
                         <li>This voucher has expired — buy a new one to continue</li>

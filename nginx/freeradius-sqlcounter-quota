@@ -1,0 +1,102 @@
+# FreeRADIUS sqlcounter — Lifetime Data Quota Enforcement
+# ==========================================================
+# File location on server: /etc/freeradius/3.0/mods-available/sqlcounter_quota
+#
+# PURPOSE
+# -------
+# Tracks cumulative bytes (upload + download) per voucher code in radacct.
+# When the total exceeds the limit stored in radcheck (Max-All-Octets),
+# FreeRADIUS sends Access-Reject at the next authentication attempt.
+#
+# This is Layer 1 enforcement.  Layer 2 (PHP cron, bin/enforce_quota.php)
+# expires the voucher in the app DB and sends a CoA Disconnect to kick the
+# live session from the AP immediately.
+#
+# INSTALLATION
+# ------------
+# 1. Copy this file to the FreeRADIUS mods-available directory:
+#       sudo cp nginx/freeradius-sqlcounter-quota \
+#                /etc/freeradius/3.0/mods-available/sqlcounter_quota
+#
+# 2. Enable the module (symlink):
+#       sudo ln -s ../mods-available/sqlcounter_quota \
+#                  /etc/freeradius/3.0/mods-enabled/sqlcounter_quota
+#
+# 3. Add to the authorize{} section in /etc/freeradius/3.0/sites-enabled/default
+#    AFTER the existing 'sql' line:
+#
+#       authorize {
+#           ...
+#           sql
+#           sqlcounter_quota      # <-- add this line
+#           ...
+#       }
+#
+# 4. Restart FreeRADIUS:
+#       sudo systemctl restart freeradius
+#
+# 5. Verify the module loads:
+#       sudo freeradius -XC 2>&1 | grep -i quota
+#       # Expected: no errors, module listed
+#
+# HOW IT WORKS
+# ------------
+# - 'key' attribute (User-Name = voucher code) groups radacct rows.
+# - 'reset = never' means bytes accumulate over the entire voucher lifetime.
+# - FreeRADIUS compares the running total to Max-All-Octets in radcheck.
+#   If counter >= Max-All-Octets the request receives Access-Reject.
+# - applyVoucherRadiusPolicy() in src/voucher_service.php automatically
+#   writes Max-All-Octets to radcheck for vouchers whose package has
+#   data_quota_mb set.
+#
+# TROUBLESHOOTING
+# ---------------
+# Check current data usage for a voucher:
+#   sudo -u postgres psql radius -c "
+#     SELECT username,
+#            SUM(acctinputoctets + acctoutputoctets) AS total_bytes,
+#            ROUND(SUM(acctinputoctets + acctoutputoctets) / 1048576.0, 2) AS total_mb
+#     FROM radacct WHERE username = 'YOUR_CODE' GROUP BY username;"
+#
+# Check the quota limit set for a voucher:
+#   sudo -u postgres psql radius -c "
+#     SELECT username, attribute, op, value FROM radcheck
+#     WHERE username = 'YOUR_CODE';"
+#
+# Live auth test (should return Access-Reject when over quota):
+#   radtest YOUR_CODE YOUR_CODE 127.0.0.1 0 YOUR_RADIUS_SECRET
+#
+# If radacct rows are missing: verify the AP sends accounting to
+#   FreeRADIUS (127.0.0.1:1813) and that the 'accounting' section
+#   in sites-enabled/default calls 'sql'.
+
+sqlcounter sqlcounter_quota {
+
+    # Which sql{} module instance to use (default is 'sql').
+    sql_module_instance = sql
+
+    # The radcheck attribute holding the per-voucher quota limit in bytes.
+    # applyVoucherRadiusPolicy() writes this automatically when data_quota_mb
+    # is set on the package.
+    check_name = Max-All-Octets
+
+    # No reply attribute needed — Session-Timeout handles time-based limits.
+    # Mid-session byte-level termination is done by the PHP cron (CoA Disconnect).
+    reply_name = Session-Timeout
+
+    # Group by RADIUS username (= voucher code).
+    key = User-Name
+
+    # 'never' = no periodic reset; bytes accumulate for the voucher lifetime.
+    # Do NOT change this to daily/weekly — voucher quotas are lifetime caps.
+    reset = never
+
+    # Sum input + output octets across ALL sessions (active and stopped).
+    # This prevents re-using quota from closed sessions on reconnect.
+    query = "SELECT COALESCE( \
+                 SUM(acctinputoctets + acctoutputoctets)::bigint, \
+                 0 \
+             ) \
+             FROM radacct \
+             WHERE username = '%{%{Stripped-User-Name}:-%{User-Name}}'"
+}

@@ -43,7 +43,7 @@ $csrf = generateCSRFToken();
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Record Sale - Seller</title>
-    <link rel="stylesheet" href="/assets/style.css">
+    <link rel="stylesheet" href="<?php echo htmlspecialchars(assetUrl('/assets/style.css')); ?>">
 </head>
 <body>
     <div class="admin-wrapper">
@@ -129,6 +129,6 @@ $csrf = generateCSRFToken();
             </div>
         </main>
     </div>
-    <script src="/assets/admin.js"></script>
+    <script src="<?php echo htmlspecialchars(assetUrl('/assets/admin.js')); ?>"></script>
 </body>
 </html>

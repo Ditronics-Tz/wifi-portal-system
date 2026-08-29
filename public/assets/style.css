@@ -906,6 +906,7 @@ a:hover { text-decoration: underline; }
 .code-item:last-child { margin-bottom: 0; }
 
 .copy-btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
     padding: 3px 10px; font-size: var(--text-xs); font-weight: 500;
     background: var(--surface); color: var(--text-secondary);
     border: 1px solid var(--border-default); border-radius: var(--radius-sm);
@@ -915,6 +916,14 @@ a:hover { text-decoration: underline; }
 
 .copy-btn:hover { background: var(--color-gray-100); }
 .copy-btn.copied { background: var(--color-success-subtle); color: var(--color-success); border-color: #a7f3d0; }
+.copy-btn.copied::before {
+    content: '';
+    width: 0.55em; height: 0.28em;
+    border-left: 2px solid currentColor;
+    border-bottom: 2px solid currentColor;
+    transform: rotate(-45deg) translateY(-1px);
+}
+.copy-btn.copy-failed { background: var(--color-error-subtle); color: var(--color-error); border-color: #fecaca; }
 
 .voucher-code-wrap {
     display: inline-flex; align-items: center; gap: var(--space-2); white-space: nowrap;
