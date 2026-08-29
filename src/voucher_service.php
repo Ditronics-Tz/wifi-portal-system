@@ -607,7 +607,7 @@ function expireOverdueVouchers(): array {
             ")->execute([':id' => (int) $row['id']]);
 
             // Close any PHP-tracked sessions
-            closeVoucherSessions((int) $row['id'], 'time_expired', 'completed');
+            closeVoucherSessions((int) $row['id'], 'time_expired', 'closed');
 
             // Log event
             recordSecurityEvent('EXPIRED_VOUCHER', 'low', $row['code'], null, [
