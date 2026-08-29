@@ -562,3 +562,65 @@ function forceExpireVoucher(string $code): bool {
     radius_disconnect($code);
     return true;
 }
+
+/**
+ * Sweep the database for active vouchers whose expires_at has passed and
+ * mark them 'expired'.
+ *
+ * WHY THIS IS NEEDED
+ * ------------------
+ * FreeRADIUS enforces time via Session-Timeout in radreply — it stops
+ * accepting auth for the voucher once the session timer runs out.
+ * However, the *database* status column is only updated when:
+ *   (a) the customer enters the code at the portal (prepareVoucherForAuth)
+ *   (b) an admin manually force-expires it
+ *   (c) sharing enforcement fires
+ * Without this sweep, a voucher whose time ran out stays 'active' in the DB
+ * indefinitely, causing confusing displays in the admin panel and status page.
+ *
+ * Run via bin/expire_vouchers.php cron (every minute).
+ *
+ * @return array{expired: int, errors: int}
+ */
+function expireOverdueVouchers(): array {
+    $db = getDB();
+
+    // Fetch all active vouchers past their expires_at
+    $stmt = $db->query("
+        SELECT id, code
+        FROM   vouchers
+        WHERE  status     = 'active'
+          AND  expires_at < NOW()
+        ORDER  BY expires_at
+    ");
+
+    $expired = 0;
+    $errors  = 0;
+
+    while ($row = $stmt->fetch()) {
+        try {
+            // Mark expired
+            $db->prepare("
+                UPDATE vouchers
+                SET status = 'expired'
+                WHERE id = :id AND status = 'active'
+            ")->execute([':id' => (int) $row['id']]);
+
+            // Close any PHP-tracked sessions
+            closeVoucherSessions((int) $row['id'], 'time_expired', 'completed');
+
+            // Log event
+            recordSecurityEvent('EXPIRED_VOUCHER', 'low', $row['code'], null, [
+                'source' => 'expiry_cron',
+            ]);
+
+            error_log('[expiry] Voucher ' . $row['code'] . ' marked expired (time elapsed)');
+            $expired++;
+        } catch (Exception $e) {
+            $errors++;
+            error_log('[expiry] Error expiring voucher ' . $row['code'] . ': ' . $e->getMessage());
+        }
+    }
+
+    return ['expired' => $expired, 'errors' => $errors];
+}
