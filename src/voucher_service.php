@@ -659,3 +659,42 @@ function expireOverdueVouchers(): array {
 
     return ['expired' => $expired, 'errors' => $errors];
 }
+
+/**
+ * Admin disconnect: expire active vouchers or clear live rows when already expired.
+ * @return array{ok: bool, message: string}
+ */
+function adminDisconnectSession(string $code): array {
+    $db = getDB();
+    $stmt = $db->prepare("SELECT id, status FROM vouchers WHERE code = :code");
+    $stmt->execute([':code' => $code]);
+    $voucher = $stmt->fetch();
+    if (!$voucher) {
+        return ['ok' => false, 'message' => "Unknown voucher $code."];
+    }
+
+    $session = getTrackedSessionForVoucher((int) $voucher['id']);
+    $mac = $session['client_mac'] ?? null;
+
+    if ($voucher['status'] !== 'expired') {
+        if (!forceExpireVoucher($code)) {
+            return ['ok' => false, 'message' => "Could not expire voucher $code."];
+        }
+        return ['ok' => true, 'message' => "Voucher expired and disconnect sent for $code."];
+    }
+
+    closeVoucherSessions((int) $voucher['id'], 'admin_disconnect', 'blocked');
+    $disconnect = radius_disconnect($code);
+
+    if ($disconnect['success']) {
+        return ['ok' => true, 'message' => "Disconnect sent for $code."];
+    }
+
+    $hint = $mac
+        ? " Kick $mac from the AP client list."
+        : ' Kick the device from the AP client list.';
+    return [
+        'ok'      => true,
+        'message' => "Session cleared for $code. Wi‑Fi may stay connected (AP does not accept CoA).$hint",
+    ];
+}

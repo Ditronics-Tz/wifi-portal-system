@@ -11,7 +11,7 @@ define('RADIUS_HOST', '127.0.0.1');
 define('RADIUS_AUTH_PORT', 1812);
 define('RADIUS_SECRET', 'replace-with-radius-shared-secret');
 define('RADIUS_COA_PORT', 3799);
-define('RADIUS_NAS_IP', '192.168.100.133');
+define('RADIUS_NAS_IP', '192.168.100.101');
 define('RADIUS_NAS_SECRET', 'replace-with-ap-radius-secret');
 
 define('ADMIN_USERNAME', 'admin');

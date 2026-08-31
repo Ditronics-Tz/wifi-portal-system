@@ -14,10 +14,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } elseif (($_POST['action'] ?? '') === 'disconnect' && !empty($_POST['code'])) {
         $code = preg_replace('/[^A-Z0-9]/', '', $_POST['code']);
         if ($code) {
-            if (forceExpireVoucher($code)) {
-                $message = "Session ended for $code.";
+            $result = adminDisconnectSession($code);
+            if ($result['ok']) {
+                $message = $result['message'];
             } else {
-                $error = "Could not end voucher $code.";
+                $error = $result['message'];
             }
         }
     }
@@ -42,7 +43,7 @@ $pageTitle = 'Sessions';
 <?php require dirname(__DIR__, 2) . '/src/admin_header.php'; ?>
             <div class="section-header">
                 <h1>Active sessions</h1>
-                <p>Live voucher sessions. MAC and IP are supporting identifiers; the session row is the source of truth.</p>
+                <p>Devices still connected on the AP (RADIUS accounting). Expired vouchers may remain online until the AP drops them — use Disconnect to block reconnects; kick the MAC from the AP if Wi‑Fi stays up.</p>
             </div>
 
             <?php if ($message): ?><div class="alert alert-success"><?php echo htmlspecialchars($message); ?></div><?php endif; ?>
@@ -61,6 +62,7 @@ $pageTitle = 'Sessions';
                         <thead>
                             <tr>
                                 <th>Voucher</th>
+                                <th>Status</th>
                                 <th>Package</th>
                                 <th>MAC</th>
                                 <th>IP</th>
@@ -71,9 +73,20 @@ $pageTitle = 'Sessions';
                             </tr>
                         </thead>
                         <tbody>
-                            <?php foreach ($sessions as $s): ?>
+                            <?php foreach ($sessions as $s):
+                                $voucherStatus = $s['voucher_status'] ?? 'active';
+                                $isZombie = ($voucherStatus === 'expired' && !empty($s['live_on_ap']));
+                            ?>
                             <tr>
                                 <td class="code-cell"><?php echo htmlspecialchars($s['code']); ?></td>
+                                <td>
+                                    <span class="badge badge-<?php echo htmlspecialchars($voucherStatus); ?>">
+                                        <?php echo htmlspecialchars(ucfirst($voucherStatus)); ?>
+                                    </span>
+                                    <?php if ($isZombie): ?>
+                                        <span class="badge badge-expired" title="Voucher expired but device still on Wi‑Fi">On AP</span>
+                                    <?php endif; ?>
+                                </td>
                                 <td><?php echo htmlspecialchars($s['plan_name']); ?></td>
                                 <td style="font-size: var(--text-sm);"><?php echo htmlspecialchars($s['client_mac'] ?: '—'); ?></td>
                                 <td style="font-size: var(--text-sm);"><?php echo htmlspecialchars($s['client_ip'] ?: '—'); ?></td>
@@ -81,7 +94,7 @@ $pageTitle = 'Sessions';
                                 <td style="font-size: var(--text-sm);"><?php echo date('d/m H:i', strtotime($s['last_seen_at'])); ?></td>
                                 <td style="font-size: var(--text-sm);"><?php echo !empty($s['expires_at']) ? date('d/m H:i', strtotime($s['expires_at'])) : '—'; ?></td>
                                 <td>
-                                    <form method="POST" style="display: inline;" data-confirm="Expire this voucher and send a disconnect to the AP?">
+                                    <form method="POST" style="display: inline;" data-confirm="<?php echo $isZombie ? 'Clear this session and attempt AP disconnect? You may still need to kick the device from the AP.' : 'Expire this voucher and send a disconnect to the AP?'; ?>">
                                         <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($csrf); ?>">
                                         <input type="hidden" name="action" value="disconnect">
                                         <input type="hidden" name="code" value="<?php echo htmlspecialchars($s['code']); ?>">

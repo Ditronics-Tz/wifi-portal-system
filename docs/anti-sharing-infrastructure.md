@@ -36,4 +36,4 @@ USB tethering and phone hotspots behind one authenticated MAC will often look li
 
 ## CoA / Disconnect
 
-`radius_disconnect()` sends a Disconnect-Request to `RADIUS_NAS_IP:RADIUS_COA_PORT` (default AP `192.168.100.133:3799`). Confirm the EAP firmware accepts RFC 5176. If it does not, “End voucher” still expires the code in the database; the AP may keep the station until Session-Timeout.
+`radius_disconnect()` sends a Disconnect-Request to `RADIUS_NAS_IP:RADIUS_COA_PORT` (AP `192.168.100.101:3799`). Confirm the EAP firmware accepts RFC 5176. If it does not, “End voucher” still expires the code in the database; the AP may keep the station until Session-Timeout.

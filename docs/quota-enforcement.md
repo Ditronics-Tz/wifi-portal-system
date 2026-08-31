@@ -65,7 +65,7 @@ ORDER BY acctupdatetime DESC;
 
 ## CoA / Disconnect (kick when over quota)
 
-`radius_disconnect()` sends to **`192.168.100.133:3799`** using `RADIUS_NAS_SECRET` in `config.php` (must match the AP RADIUS secret).
+`radius_disconnect()` sends to **`192.168.100.101:3799`** using `RADIUS_NAS_SECRET` in `config.php` (must match the AP RADIUS secret).
 
 On EAP650, if CoA is supported, enable **RADIUS CoA** / **Disconnect** on the same secret.
 

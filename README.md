@@ -141,7 +141,7 @@ SELECT code, status, first_used_at, expires_at FROM vouchers;
 
 Configure the EAP650 standalone portal:
 
-1. Access AP web interface at http://192.168.100.133
+1. Access AP web interface at http://192.168.100.101
 2. Go to **Wireless Control** → **Portal**
 3. Enable Portal
 4. Portal Type: **External Portal Server**

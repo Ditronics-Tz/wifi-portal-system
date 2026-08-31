@@ -59,6 +59,35 @@ function getActiveSessionForVoucher(int $voucherId): ?array {
     return $row ?: null;
 }
 
+/** Active or blocked session row — used when syncing live radacct. */
+function getTrackedSessionForVoucher(int $voucherId): ?array {
+    $db = getDB();
+    $stmt = $db->prepare("
+        SELECT * FROM voucher_sessions
+        WHERE voucher_id = :voucher_id AND status IN ('active', 'blocked')
+        ORDER BY CASE status WHEN 'active' THEN 0 ELSE 1 END, last_seen_at DESC
+        LIMIT 1
+    ");
+    $stmt->execute([':voucher_id' => $voucherId]);
+    $row = $stmt->fetch();
+    return $row ?: null;
+}
+
+function voucherHasLiveRadacct(string $code): bool {
+    $db = getDB();
+    try {
+        $stmt = $db->prepare("
+            SELECT 1 FROM radacct
+            WHERE username = :code AND acctstoptime IS NULL
+            LIMIT 1
+        ");
+        $stmt->execute([':code' => $code]);
+        return (bool) $stmt->fetchColumn();
+    } catch (Exception $e) {
+        return false;
+    }
+}
+
 function upsertVoucherSession(
     int $voucherId,
     ?string $clientMac,
@@ -122,10 +151,21 @@ function evaluateDevicePolicy(array $voucher, ?string $clientMac): array {
 function getAdminActiveSessions(int $limit = 100): array {
     $db = getDB();
     $stmt = $db->prepare("
-        SELECT s.*, v.code, v.plan_name, v.status AS voucher_status, v.expires_at AS voucher_expires_at
+        SELECT s.*, v.code, v.plan_name, v.status AS voucher_status, v.expires_at AS voucher_expires_at,
+               EXISTS (
+                   SELECT 1 FROM radacct r
+                   WHERE r.username = v.code AND r.acctstoptime IS NULL
+               ) AS live_on_ap
         FROM voucher_sessions s
         JOIN vouchers v ON v.id = s.voucher_id
         WHERE s.status = 'active'
+           OR (
+               s.status = 'blocked'
+               AND EXISTS (
+                   SELECT 1 FROM radacct r
+                   WHERE r.username = v.code AND r.acctstoptime IS NULL
+               )
+           )
         ORDER BY s.last_seen_at DESC
         LIMIT :limit
     ");
@@ -133,7 +173,6 @@ function getAdminActiveSessions(int $limit = 100): array {
     $stmt->execute();
     return $stmt->fetchAll();
 }
-
 function getSecurityEvents(int $limit = 100, ?string $eventType = null): array {
     $db = getDB();
     $sql = "SELECT * FROM security_events WHERE 1=1";
@@ -175,23 +214,32 @@ function syncSessionsFromRadacct(): int {
         if ($code === '') {
             continue;
         }
-        $vStmt = $db->prepare("SELECT id FROM vouchers WHERE code = :code");
+        $vStmt = $db->prepare("SELECT id, status FROM vouchers WHERE code = :code");
         $vStmt->execute([':code' => $code]);
-        $voucherId = $vStmt->fetchColumn();
-        if (!$voucherId) {
+        $voucher = $vStmt->fetch();
+        if (!$voucher) {
             continue;
         }
+        $voucherId = (int) $voucher['id'];
+        $voucherExpired = ($voucher['status'] === 'expired');
+        $sessionStatus = $voucherExpired ? 'blocked' : 'active';
 
-        $session = getActiveSessionForVoucher((int) $voucherId);
         $mac = $row['callingstationid'] ?: null;
         $ip = $row['framedipaddress'] ?: null;
         $acctId = $row['acctsessionid'] ?: null;
         $nas = $row['nasipaddress'] ?: null;
 
+        $session = getTrackedSessionForVoucher($voucherId);
+        if ($voucherExpired && $session && $session['status'] === 'active') {
+            closeVoucherSessions($voucherId, 'live_after_expire', 'blocked');
+            $session = getTrackedSessionForVoucher($voucherId);
+        }
+
         if ($session) {
             $stmt = $db->prepare("
                 UPDATE voucher_sessions
                 SET last_seen_at = NOW(),
+                    status = :status,
                     client_mac = COALESCE(:mac, client_mac),
                     client_ip = COALESCE(:ip, client_ip),
                     gateway_session_id = COALESCE(:acct, gateway_session_id),
@@ -199,18 +247,19 @@ function syncSessionsFromRadacct(): int {
                 WHERE id = :id
             ");
             $stmt->execute([
-                ':mac'  => $mac,
-                ':ip'   => $ip,
-                ':acct' => $acctId,
-                ':nas'  => $nas,
-                ':id'   => $session['id'],
+                ':status' => $sessionStatus,
+                ':mac'    => $mac,
+                ':ip'     => $ip,
+                ':acct'   => $acctId,
+                ':nas'    => $nas,
+                ':id'     => $session['id'],
             ]);
             $updated++;
         } else {
             $stmt = $db->prepare("
                 INSERT INTO voucher_sessions
                     (voucher_id, client_mac, client_ip, gateway_session_id, nas_ip, status)
-                VALUES (:voucher_id, :mac, :ip, :acct, :nas, 'active')
+                VALUES (:voucher_id, :mac, :ip, :acct, :nas, :status)
             ");
             $stmt->execute([
                 ':voucher_id' => $voucherId,
@@ -218,6 +267,7 @@ function syncSessionsFromRadacct(): int {
                 ':ip'         => $ip,
                 ':acct'       => $acctId,
                 ':nas'        => $nas,
+                ':status'     => $sessionStatus,
             ]);
             $updated++;
         }
