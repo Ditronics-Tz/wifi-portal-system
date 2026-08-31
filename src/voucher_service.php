@@ -24,6 +24,10 @@ function prepareVoucherForAuth(string $code, ?string $clientMac = null, ?string 
         return ['status' => 'invalid'];
     }
 
+    if ($clientMac) {
+        $clientMac = normalizeMacAddress($clientMac);
+    }
+
     $db = getDB();
 
     try {
@@ -202,14 +206,44 @@ function releaseVoucherDevice(string $code): bool {
 }
 
 /**
+ * Normalize a MAC address to uppercase AA:BB:CC:DD:EE:FF.
+ */
+function normalizeMacAddress(string $mac): string {
+    $hex = strtoupper(preg_replace('/[^a-fA-F0-9]/', '', $mac));
+    if (strlen($hex) !== 12) {
+        return strtoupper($mac);
+    }
+
+    return implode(':', str_split($hex, 2));
+}
+
+/**
+ * Build a POSIX extended-regex for FreeRADIUS Calling-Station-Id checks.
+ * FreeRADIUS does not support PCRE flags like (?i); use per-character classes instead.
+ */
+function macToCallingStationRegex(string $mac): string {
+    $hex = strtoupper(preg_replace('/[^a-fA-F0-9]/', '', $mac));
+    if (strlen($hex) !== 12) {
+        throw new InvalidArgumentException('Invalid MAC address');
+    }
+
+    $octets = [];
+    for ($i = 0; $i < 12; $i += 2) {
+        $a = $hex[$i];
+        $b = $hex[$i + 1];
+        $octets[] = '[' . $a . strtolower($a) . '][' . $b . strtolower($b) . ']';
+    }
+
+    return '^' . implode('[:-]', $octets) . '$';
+}
+
+/**
  * Bind a voucher's RADIUS auth to a single MAC via a Calling-Station-Id
  * check-item, so FreeRADIUS itself rejects a mismatched device even if
  * a request reaches it without going through the PHP portal page first.
- * Case-insensitive regex match: AP-reported MAC casing/format for
- * Calling-Station-Id is not guaranteed to match what the portal captured.
  */
 function lockVoucherMacInRadius(string $code, string $mac): void {
-    $pattern = '(?i)^' . preg_quote($mac, '/') . '$';
+    $pattern = macToCallingStationRegex($mac);
     upsertRadAttribute('radcheck', $code, 'Calling-Station-Id', $pattern, '=~');
 }
 
