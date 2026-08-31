@@ -297,10 +297,10 @@ function applyVoucherRadiusPolicy(string $username, string $planName, int $timeo
     upsertRadAttribute('radreply', $username, 'Session-Timeout', (string) max(1, $timeoutSeconds));
     upsertRadAttribute('radcheck', $username, 'Simultaneous-Use', '1', ':=');
 
-    // Tell the AP to send interim accounting packets every 60 s.
+    // Tell the AP to send interim accounting packets every 30 s.
     // Without this the AP only writes to radacct at session start/stop,
     // making server-side byte-counting unreliable mid-session.
-    upsertRadAttribute('radreply', $username, 'Acct-Interim-Interval', '60');
+    upsertRadAttribute('radreply', $username, 'Acct-Interim-Interval', '30');
 
     $pkg = getPackageByName($planName);
     if (!$pkg) {

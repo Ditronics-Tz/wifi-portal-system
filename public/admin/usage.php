@@ -141,14 +141,12 @@ $pageTitle = 'Data Usage';
                                 <?php
                                     $status = $row['voucher_status'] ?? 'unused';
                                     $statusLabel = ucfirst($status);
-                                    $pct = $row['percent_used'];
+                                    $pct = $row['display_percent'];
                                     $barClass = 'progress-fill';
-                                    if ($pct !== null) {
-                                        if ($pct >= 90) {
-                                            $barClass .= ' danger';
-                                        } elseif ($pct >= 70) {
-                                            $barClass .= ' warning';
-                                        }
+                                    if ($row['is_over_quota']) {
+                                        $barClass .= ' danger';
+                                    } elseif ($pct !== null && $pct >= 70) {
+                                        $barClass .= ' warning';
                                     }
                                 ?>
                                 <tr>
@@ -173,9 +171,15 @@ $pageTitle = 'Data Usage';
                                                 <div class="<?php echo $barClass; ?>" style="width: <?php echo (float) $pct; ?>%;"></div>
                                             </div>
                                             <div style="font-size: var(--text-xs); color: var(--text-tertiary); margin-top: 4px;">
-                                                <?php echo number_format((float) $pct, 1); ?>% used
-                                                <?php if ($row['remaining_mb'] !== null): ?>
-                                                    · <?php echo number_format($row['remaining_mb'], 2); ?> MB left
+                                                <?php if ($row['is_over_quota']): ?>
+                                                    <span style="color: var(--color-error); font-weight: 600;">
+                                                        Exceeded by <?php echo number_format($row['exceeded_by_mb'], 2); ?> MB
+                                                    </span>
+                                                <?php else: ?>
+                                                    <?php echo number_format((float) $row['percent_used'], 1); ?>% used
+                                                    <?php if ($row['remaining_mb'] !== null): ?>
+                                                        · <?php echo number_format($row['remaining_mb'], 2); ?> MB left
+                                                    <?php endif; ?>
                                                 <?php endif; ?>
                                             </div>
                                         <?php elseif ($row['used_bytes'] > 0): ?>

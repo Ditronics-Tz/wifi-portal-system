@@ -1,0 +1,16 @@
+# Lifetime data quota — compares radacct byte totals to Max-All-Octets in radcheck.
+# Installed by bin/install_freeradius_quota.sh
+
+sqlcounter sqlcounter_quota {
+    sql_module_instance = sql
+    check_name = Max-All-Octets
+    reply_name = Session-Timeout
+    key = User-Name
+    reset = never
+    query = "SELECT COALESCE( \
+                 SUM(acctinputoctets + acctoutputoctets)::bigint, \
+                 0 \
+             ) \
+             FROM radacct \
+             WHERE username = '%{%{Stripped-User-Name}:-%{User-Name}}'"
+}

@@ -1,0 +1,94 @@
+# Data quota enforcement
+
+Packages with `data_quota_mb` set get a **1 GB (or configured) lifetime cap** per voucher. Three layers work together:
+
+| Layer | What it does | Where |
+|-------|----------------|-------|
+| **1. sqlcounter_quota** | Rejects new logins when cumulative `radacct` bytes ≥ `Max-All-Octets` | FreeRADIUS `authorize` |
+| **2. enforce_quota cron** | Every 30s: reads `radacct`, expires voucher, sends CoA Disconnect | `bin/enforce_quota.php` |
+| **3. AP interim accounting** | Updates byte counts on the open `radacct` row during a session | TP-Link EAP650 |
+
+Without layer 3, usage may jump from 0 → full total only when the session stops, so layer 2 cannot cut the session early.
+
+## One-time server setup (FreeRADIUS sqlcounter)
+
+On `192.168.100.100` as root:
+
+```bash
+sudo bash /var/www/voucher-portal/bin/install_freeradius_quota.sh
+```
+
+Verify a voucher over quota gets **Access-Reject**:
+
+```bash
+radtest OVER_QUOTA_CODE OVER_QUOTA_CODE 127.0.0.1 0 YOUR_RADIUS_SECRET
+```
+
+Check module loaded:
+
+```bash
+sudo freeradius -XC 2>&1 | grep -i sqlcounter_quota
+```
+
+## TP-Link EAP650 — interim accounting (required)
+
+On the AP web UI (`http://192.168.100.133`):
+
+1. **Wireless Control** → your voucher SSID → **Advanced** (or RADIUS settings).
+2. **RADIUS accounting** → enabled, server `192.168.100.100`, port **1813**, same secret as auth.
+3. Enable **Interim Accounting** / **Accounting Update** if the firmware exposes it (interval **60** or **30** seconds).
+4. If there is no interim toggle, check **Portal** → **External RADIUS** → accounting options on your firmware version.
+
+The portal already sends `Acct-Interim-Interval := 30` in `radreply` for each voucher; the AP must honor it.
+
+### Confirm interim updates reach FreeRADIUS
+
+During an active session:
+
+```bash
+php /var/www/voucher-portal/bin/verify_quota_setup.php
+```
+
+Or in SQL:
+
+```sql
+SELECT username, acctstarttime, acctupdatetime,
+       acctinputoctets + acctoutputoctets AS bytes
+FROM radacct
+WHERE acctstoptime IS NULL
+ORDER BY acctupdatetime DESC;
+```
+
+`acctupdatetime` should advance every ~30–60s and `bytes` should increase **before** the session stops.
+
+## CoA / Disconnect (kick when over quota)
+
+`radius_disconnect()` sends to **`192.168.100.133:3799`** using `RADIUS_NAS_SECRET` in `config.php` (must match the AP RADIUS secret).
+
+On EAP650, if CoA is supported, enable **RADIUS CoA** / **Disconnect** on the same secret.
+
+Test from the portal host:
+
+```bash
+php /var/www/voucher-portal/bin/verify_quota_setup.php --coa-test USERNAME
+```
+
+If the AP does not reply with `Disconnect-ACK`, sessions still end when quota cron expires the voucher in the DB, but the station may stay on WiFi until **Session-Timeout** or idle timeout.
+
+## Cron (portal host)
+
+`ditronics_kibada` crontab should include (every 30 seconds):
+
+```
+* * * * * /usr/bin/php /var/www/voucher-portal/bin/enforce_quota.php >> ~/logs/voucher-portal/quota.log 2>&1
+* * * * * sleep 30 && /usr/bin/php /var/www/voucher-portal/bin/enforce_quota.php >> ~/logs/voucher-portal/quota.log 2>&1
+```
+
+## Troubleshooting
+
+| Symptom | Likely cause |
+|---------|----------------|
+| Usage jumps to full amount at session end only | AP not sending interim accounting |
+| Usage far above quota before expire | Same + sqlcounter not installed |
+| `disconnect_sent: false` in security events | CoA disabled on AP or wrong `RADIUS_NAS_SECRET` |
+| Reconnect still works after quota | sqlcounter not in `authorize{}` or missing `Max-All-Octets` in `radcheck` |

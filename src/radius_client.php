@@ -142,10 +142,12 @@ function radius_disconnect($username, $nasIpAddress = null, $nasPort = 1) {
 
     $acctSessionId = null;
     $callingStation = null;
+    $framedIp = null;
+    $nasIpFromAcct = null;
     try {
         $db = getDB();
         $stmt = $db->prepare("
-            SELECT acctsessionid, callingstationid
+            SELECT acctsessionid, callingstationid, framedipaddress, nasipaddress
             FROM radacct
             WHERE username = :username AND acctstoptime IS NULL
             ORDER BY acctstarttime DESC
@@ -156,14 +158,21 @@ function radius_disconnect($username, $nasIpAddress = null, $nasPort = 1) {
         if ($acct) {
             $acctSessionId = $acct['acctsessionid'] ?: null;
             $callingStation = $acct['callingstationid'] ?: null;
+            $framedIp = $acct['framedipaddress'] ?: null;
+            $nasIpFromAcct = $acct['nasipaddress'] ?: null;
         }
     } catch (Exception $e) {
         // radacct optional
     }
 
+    $disconnectTarget = $nasIp;
+    if ($nasIpFromAcct && filter_var($nasIpFromAcct, FILTER_VALIDATE_IP)) {
+        $disconnectTarget = $nasIpFromAcct;
+    }
+
     $lines = [
         sprintf('User-Name = "%s"', $username),
-        sprintf('NAS-IP-Address = %s', $nasIp),
+        sprintf('NAS-IP-Address = %s', $disconnectTarget),
         sprintf('NAS-Port = %d', (int) $nasPort),
     ];
     if ($acctSessionId && preg_match('/^[A-Za-z0-9.:_-]+$/', $acctSessionId)) {
@@ -171,6 +180,9 @@ function radius_disconnect($username, $nasIpAddress = null, $nasPort = 1) {
     }
     if ($callingStation && preg_match('/^[A-Fa-f0-9:.-]+$/', $callingStation)) {
         $lines[] = sprintf('Calling-Station-Id = "%s"', $callingStation);
+    }
+    if ($framedIp && filter_var($framedIp, FILTER_VALIDATE_IP)) {
+        $lines[] = sprintf('Framed-IP-Address = %s', $framedIp);
     }
     $input = implode("\n", $lines) . "\n";
 

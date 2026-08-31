@@ -159,16 +159,25 @@ function formatTime(int $seconds): string {
                     </div>
                     <div class="progress-track">
                         <?php
-                            $dataPct = $quotaStatus['percent_used'];
+                            $dataPct = $quotaStatus['display_percent'];
                             $dataClass = 'progress-fill';
-                            if ($dataPct >= 90)      $dataClass .= ' danger';
-                            elseif ($dataPct >= 70)  $dataClass .= ' warning';
+                            if (!empty($quotaStatus['is_over_quota'])) {
+                                $dataClass .= ' danger';
+                            } elseif ($dataPct >= 90) {
+                                $dataClass .= ' danger';
+                            } elseif ($dataPct >= 70) {
+                                $dataClass .= ' warning';
+                            }
                         ?>
                         <div class="<?= $dataClass ?>" style="width:<?= $dataPct ?>%"></div>
                     </div>
                     <div style="display:flex;justify-content:space-between;font-size:.72rem;color:var(--text-tertiary);margin-top:4px;">
-                        <span><?= $quotaStatus['remaining_mb'] ?> MB remaining</span>
-                        <span><?= $dataPct ?>% used</span>
+                        <?php if (!empty($quotaStatus['is_over_quota'])): ?>
+                            <span style="color:var(--color-error);">Exceeded by <?= $quotaStatus['exceeded_by_mb'] ?> MB</span>
+                        <?php else: ?>
+                            <span><?= $quotaStatus['remaining_mb'] ?> MB remaining</span>
+                        <?php endif; ?>
+                        <span><?= min(100, (float) $quotaStatus['percent_used']) ?>% used</span>
                     </div>
                     <?php if ($quotaStatus['exceeded']): ?>
                     <div class="alert alert-error" style="margin-top:8px;padding:8px 12px;font-size:.8rem;">

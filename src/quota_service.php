@@ -91,6 +91,8 @@ function getVoucherQuotaStatus(string $code, string $planName): array {
     $quotaBytes = (int) $pkg['data_quota_mb'] * 1024 * 1024;
     $usedBytes  = getVoucherBytesUsed($code);
     $remaining  = max(0, $quotaBytes - $usedBytes);
+    $rawPercent = $quotaBytes > 0 ? round(($usedBytes / $quotaBytes) * 100, 1) : 0.0;
+    $isOver     = $usedBytes > $quotaBytes;
 
     return [
         'has_quota'       => true,
@@ -100,10 +102,11 @@ function getVoucherQuotaStatus(string $code, string $planName): array {
         'used_mb'         => round($usedBytes  / (1024 * 1024), 2),
         'remaining_bytes' => $remaining,
         'remaining_mb'    => round($remaining  / (1024 * 1024), 2),
-        'exceeded'        => ($usedBytes >= $quotaBytes),
-        'percent_used'    => min(100.0, $quotaBytes > 0
-                                ? round(($usedBytes / $quotaBytes) * 100, 1)
-                                : 0.0),
+        'exceeded'        => $isOver,
+        'exceeded_by_mb'  => $isOver ? round(($usedBytes - $quotaBytes) / (1024 * 1024), 2) : 0.0,
+        'percent_used'    => $rawPercent,
+        'display_percent' => min(100.0, $rawPercent),
+        'is_over_quota'   => $isOver,
     ];
 }
 
@@ -151,14 +154,16 @@ function enrichSoldVoucherUsageRow(array $row): array {
     $quotaMb = (int) ($row['quota_mb'] ?? 0);
     $quotaBytes = $quotaMb > 0 ? $quotaMb * 1024 * 1024 : 0;
     $remainingBytes = $quotaBytes > 0 ? max(0, $quotaBytes - $usedBytes) : 0;
+    $rawPercent = $quotaBytes > 0 ? round(($usedBytes / $quotaBytes) * 100, 1) : null;
 
     $row['used_bytes'] = $usedBytes;
     $row['used_mb'] = bytesToMb($usedBytes);
     $row['remaining_mb'] = $quotaBytes > 0 ? bytesToMb($remainingBytes) : null;
     $row['has_quota'] = $quotaMb > 0;
-    $row['percent_used'] = $quotaBytes > 0
-        ? min(100.0, round(($usedBytes / $quotaBytes) * 100, 1))
-        : null;
+    $row['percent_used'] = $rawPercent;
+    $row['display_percent'] = $rawPercent !== null ? min(100.0, $rawPercent) : null;
+    $row['is_over_quota'] = $quotaBytes > 0 && $usedBytes > $quotaBytes;
+    $row['exceeded_by_mb'] = $row['is_over_quota'] ? bytesToMb($usedBytes - $quotaBytes) : 0.0;
 
     return $row;
 }
@@ -310,6 +315,9 @@ function getSoldVoucherUsageStats(
 function expireVoucherDueToQuota(string $code, int $voucherId): void {
     $db = getDB();
 
+    // 0. Kick live session from AP while radacct row may still be open
+    $disconnect = radius_disconnect($code);
+
     // 1. Mark expired
     $stmt = $db->prepare("
         UPDATE vouchers
@@ -340,9 +348,7 @@ function expireVoucherDueToQuota(string $code, int $voucherId): void {
         )->execute([':u' => $code]);
     }
 
-    // 4. CoA Disconnect (best-effort — AP firmware may not respond)
-    $disconnect = radius_disconnect($code);
-
+    // 4. CoA already attempted above; log result below
     // 5. Security event
     $usedBytes = getVoucherBytesUsed($code);
     recordSecurityEvent('QUOTA_EXCEEDED', 'medium', $code, null, [
@@ -382,12 +388,21 @@ function runQuotaEnforcement(): array {
         return ['checked' => 0, 'expired' => 0, 'errors' => 1];
     }
 
-    // All active vouchers that have not yet expired by time
+    // Active vouchers with a data-capped package, including any with a live radacct row
     $stmt = $db->query("
         SELECT v.id, v.code, v.plan_name
         FROM   vouchers v
-        WHERE  v.status     = 'active'
-          AND  v.expires_at > NOW()
+        INNER JOIN packages p ON p.name = v.plan_name
+            AND COALESCE(p.data_quota_mb, 0) > 0
+            AND COALESCE(p.is_deleted, false) = false
+        WHERE  v.status = 'active'
+          AND (
+              v.expires_at > NOW()
+              OR EXISTS (
+                  SELECT 1 FROM radacct r
+                  WHERE r.username = v.code AND r.acctstoptime IS NULL
+              )
+          )
         ORDER  BY v.id
     ");
 
