@@ -23,6 +23,17 @@ fi
 cp "$MOD_SRC" "$MOD_DST"
 ln -sf ../mods-available/sqlcounter_quota "$FR_DIR/mods-enabled/sqlcounter_quota"
 
+# counter_name attribute for sqlcounter (stores running byte total from SQL)
+DICT_LOCAL="$FR_DIR/dictionary.local"
+if ! grep -q 'Max-All-Octets-Used' "$DICT_LOCAL" 2>/dev/null; then
+    cat >> "$DICT_LOCAL" <<'EOF'
+
+# Voucher data-quota sqlcounter (see freeradius/sqlcounter_quota)
+ATTRIBUTE Max-All-Octets-Used 3001 integer
+EOF
+    echo "Added Max-All-Octets-Used to $DICT_LOCAL"
+fi
+
 if [[ ! -f "$SITE" ]]; then
     echo "Missing $SITE" >&2
     exit 1

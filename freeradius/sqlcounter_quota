@@ -1,8 +1,13 @@
 # Lifetime data quota — compares radacct byte totals to Max-All-Octets in radcheck.
 # Installed by bin/install_freeradius_quota.sh
+#
+# counter_name = current usage (from SQL query, stored in control list)
+# check_name   = limit per voucher (Max-All-Octets in radcheck, set by PHP)
 
 sqlcounter sqlcounter_quota {
     sql_module_instance = sql
+    dialect = postgresql
+    counter_name = Max-All-Octets-Used
     check_name = Max-All-Octets
     reply_name = Session-Timeout
     key = User-Name

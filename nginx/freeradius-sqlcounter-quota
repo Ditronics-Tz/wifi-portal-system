@@ -74,10 +74,12 @@ sqlcounter sqlcounter_quota {
 
     # Which sql{} module instance to use (default is 'sql').
     sql_module_instance = sql
+    dialect = postgresql
 
-    # The radcheck attribute holding the per-voucher quota limit in bytes.
-    # applyVoucherRadiusPolicy() writes this automatically when data_quota_mb
-    # is set on the package.
+    # Current usage from radacct (control attribute; see dictionary.local).
+    counter_name = Max-All-Octets-Used
+
+    # Limit per voucher — written to radcheck by applyVoucherRadiusPolicy().
     check_name = Max-All-Octets
 
     # No reply attribute needed — Session-Timeout handles time-based limits.
@@ -92,7 +94,6 @@ sqlcounter sqlcounter_quota {
     reset = never
 
     # Sum input + output octets across ALL sessions (active and stopped).
-    # This prevents re-using quota from closed sessions on reconnect.
     query = "SELECT COALESCE( \
                  SUM(acctinputoctets + acctoutputoctets)::bigint, \
                  0 \
