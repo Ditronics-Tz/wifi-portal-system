@@ -13,6 +13,7 @@ $navItems = [
     'sales'        => ['href' => '/admin/sales.php',        'label' => 'Sales',        'icon' => 'Coins01Icon'],
     'generate'     => ['href' => '/admin/generate.php',     'label' => 'Vouchers',     'icon' => 'Ticket01Icon'],
     'sessions'     => ['href' => '/admin/sessions.php',     'label' => 'Sessions',     'icon' => 'Wifi01Icon'],
+    'usage'        => ['href' => '/admin/usage.php',        'label' => 'Data Usage',   'icon' => 'ChartLineData01Icon'],
     'security'     => ['href' => '/admin/security.php',     'label' => 'Security',     'icon' => 'Alert02Icon'],
     'packages'     => ['href' => '/admin/packages.php',     'label' => 'Packages',     'icon' => 'PackageIcon'],
     'sellers'      => ['href' => '/admin/sellers.php',      'label' => 'Staff',        'icon' => 'UserGroupIcon'],

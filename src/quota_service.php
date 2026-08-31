@@ -59,6 +59,10 @@ function getVoucherBytesUsed(string $code): int {
     }
 }
 
+function bytesToMb(int $bytes): float {
+    return round($bytes / (1024 * 1024), 2);
+}
+
 // ── Quota Status ────────────────────────────────────────────────
 
 /**
@@ -100,6 +104,190 @@ function getVoucherQuotaStatus(string $code, string $planName): array {
         'percent_used'    => min(100.0, $quotaBytes > 0
                                 ? round(($usedBytes / $quotaBytes) * 100, 1)
                                 : 0.0),
+    ];
+}
+
+// ── Sold voucher usage (admin) ──────────────────────────────────
+
+/**
+ * @return array{sql: string, params: array<string, mixed>}
+ */
+function buildSoldVoucherUsageFilters(
+    ?string $dateFrom = null,
+    ?string $dateTo = null,
+    ?string $planName = null,
+    ?string $status = null,
+    ?string $search = null
+): array {
+    $sql = ' WHERE 1=1';
+    $params = [];
+
+    if ($dateFrom) {
+        $sql .= ' AND s.sold_at >= :date_from';
+        $params[':date_from'] = $dateFrom;
+    }
+    if ($dateTo) {
+        $sql .= ' AND s.sold_at <= :date_to';
+        $params[':date_to'] = $dateTo . ' 23:59:59';
+    }
+    if ($planName) {
+        $sql .= ' AND s.plan_name = :plan_name';
+        $params[':plan_name'] = $planName;
+    }
+    if ($status) {
+        $sql .= ' AND v.status = :status';
+        $params[':status'] = $status;
+    }
+    if ($search) {
+        $sql .= ' AND (s.voucher_code LIKE :search OR s.buyer_phone LIKE :search OR s.buyer_name LIKE :search)';
+        $params[':search'] = '%' . $search . '%';
+    }
+
+    return ['sql' => $sql, 'params' => $params];
+}
+
+function enrichSoldVoucherUsageRow(array $row): array {
+    $usedBytes = max((int) ($row['data_bytes_used'] ?? 0), (int) ($row['radacct_bytes'] ?? 0));
+    $quotaMb = (int) ($row['quota_mb'] ?? 0);
+    $quotaBytes = $quotaMb > 0 ? $quotaMb * 1024 * 1024 : 0;
+    $remainingBytes = $quotaBytes > 0 ? max(0, $quotaBytes - $usedBytes) : 0;
+
+    $row['used_bytes'] = $usedBytes;
+    $row['used_mb'] = bytesToMb($usedBytes);
+    $row['remaining_mb'] = $quotaBytes > 0 ? bytesToMb($remainingBytes) : null;
+    $row['has_quota'] = $quotaMb > 0;
+    $row['percent_used'] = $quotaBytes > 0
+        ? min(100.0, round(($usedBytes / $quotaBytes) * 100, 1))
+        : null;
+
+    return $row;
+}
+
+/**
+ * Sold vouchers with data usage for the admin usage page.
+ */
+function getSoldVoucherUsage(
+    ?string $dateFrom = null,
+    ?string $dateTo = null,
+    ?string $planName = null,
+    ?string $status = null,
+    ?string $search = null,
+    int $limit = 25,
+    int $offset = 0
+): array {
+    $db = getDB();
+    $filters = buildSoldVoucherUsageFilters($dateFrom, $dateTo, $planName, $status, $search);
+
+    $sql = "
+        SELECT
+            s.id,
+            s.voucher_code,
+            s.plan_name,
+            s.buyer_name,
+            s.buyer_phone,
+            s.sold_at,
+            s.price,
+            u.username AS seller_username,
+            v.status AS voucher_status,
+            v.first_used_at,
+            v.expires_at,
+            COALESCE(v.data_bytes_used, 0) AS data_bytes_used,
+            COALESCE(p.data_quota_mb, 0) AS quota_mb,
+            COALESCE(ra.total_bytes, 0) AS radacct_bytes
+        FROM sales s
+        LEFT JOIN vouchers v ON v.code = s.voucher_code
+        LEFT JOIN packages p ON p.name = s.plan_name AND COALESCE(p.is_deleted, false) = false
+        LEFT JOIN users u ON u.id = s.seller_id
+        LEFT JOIN (
+            SELECT username, SUM(acctinputoctets + acctoutputoctets)::bigint AS total_bytes
+            FROM radacct
+            GROUP BY username
+        ) ra ON ra.username = s.voucher_code
+        {$filters['sql']}
+        ORDER BY s.sold_at DESC
+        LIMIT :limit OFFSET :offset
+    ";
+
+    $stmt = $db->prepare($sql);
+    foreach ($filters['params'] as $key => $value) {
+        $stmt->bindValue($key, $value);
+    }
+    $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
+    $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
+    $stmt->execute();
+
+    return array_map('enrichSoldVoucherUsageRow', $stmt->fetchAll());
+}
+
+function countSoldVoucherUsage(
+    ?string $dateFrom = null,
+    ?string $dateTo = null,
+    ?string $planName = null,
+    ?string $status = null,
+    ?string $search = null
+): int {
+    $db = getDB();
+    $filters = buildSoldVoucherUsageFilters($dateFrom, $dateTo, $planName, $status, $search);
+
+    $sql = "
+        SELECT COUNT(*)
+        FROM sales s
+        LEFT JOIN vouchers v ON v.code = s.voucher_code
+        LEFT JOIN users u ON u.id = s.seller_id
+        {$filters['sql']}
+    ";
+
+    $stmt = $db->prepare($sql);
+    foreach ($filters['params'] as $key => $value) {
+        $stmt->bindValue($key, $value);
+    }
+    $stmt->execute();
+
+    return (int) $stmt->fetchColumn();
+}
+
+/**
+ * Summary stats for the admin usage page.
+ */
+function getSoldVoucherUsageStats(
+    ?string $dateFrom = null,
+    ?string $dateTo = null,
+    ?string $planName = null,
+    ?string $status = null,
+    ?string $search = null
+): array {
+    $db = getDB();
+    $filters = buildSoldVoucherUsageFilters($dateFrom, $dateTo, $planName, $status, $search);
+
+    $sql = "
+        SELECT
+            COUNT(*) AS sold_count,
+            COUNT(*) FILTER (WHERE v.status = 'active') AS active_count,
+            COUNT(*) FILTER (WHERE GREATEST(COALESCE(v.data_bytes_used, 0), COALESCE(ra.total_bytes, 0)) > 0) AS used_count,
+            COALESCE(SUM(GREATEST(COALESCE(v.data_bytes_used, 0), COALESCE(ra.total_bytes, 0))), 0) AS total_bytes
+        FROM sales s
+        LEFT JOIN vouchers v ON v.code = s.voucher_code
+        LEFT JOIN users u ON u.id = s.seller_id
+        LEFT JOIN (
+            SELECT username, SUM(acctinputoctets + acctoutputoctets)::bigint AS total_bytes
+            FROM radacct
+            GROUP BY username
+        ) ra ON ra.username = s.voucher_code
+        {$filters['sql']}
+    ";
+
+    $stmt = $db->prepare($sql);
+    foreach ($filters['params'] as $key => $value) {
+        $stmt->bindValue($key, $value);
+    }
+    $stmt->execute();
+    $row = $stmt->fetch() ?: [];
+
+    return [
+        'sold_count'   => (int) ($row['sold_count'] ?? 0),
+        'active_count' => (int) ($row['active_count'] ?? 0),
+        'used_count'   => (int) ($row['used_count'] ?? 0),
+        'total_mb'     => bytesToMb((int) ($row['total_bytes'] ?? 0)),
     ];
 }
 

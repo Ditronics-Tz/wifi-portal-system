@@ -57,6 +57,7 @@ $routes = [
     '/admin/sellers.php'   => $baseDir . '/public/admin/sellers.php',
     '/admin/packages.php'  => $baseDir . '/public/admin/packages.php',
     '/admin/analytics.php' => $baseDir . '/public/admin/analytics.php',
+    '/admin/usage.php'     => $baseDir . '/public/admin/usage.php',
     '/admin/profile.php'   => $baseDir . '/public/admin/profile.php',
     '/admin/settings.php'  => $baseDir . '/public/admin/settings.php',
     '/admin/logout.php'    => $baseDir . '/public/admin/logout.php',
