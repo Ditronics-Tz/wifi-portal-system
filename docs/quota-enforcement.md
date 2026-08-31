@@ -75,7 +75,19 @@ Test from the portal host:
 php /var/www/voucher-portal/bin/verify_quota_setup.php --coa-test USERNAME
 ```
 
-If the AP does not reply with `Disconnect-ACK`, sessions still end when quota cron expires the voucher in the DB, but the station may stay on WiFi until **Session-Timeout** or idle timeout.
+If the AP does not reply with `Disconnect-ACK`, the portal still expires the voucher, sets `Auth-Type=Reject` and `Session-Timeout=1`. The station may stay on WiFi until the next portal re-auth.
+
+### EAP650 Authentication Timeout = 1 minute (required for quota cut-off)
+
+Without CoA, the AP only drops a live session after the original Session-Timeout or when it forces re-authentication.
+
+On the EAP650 **External Portal / captive portal** settings for the voucher SSID:
+
+1. Find **Authentication Timeout** (sometimes under portal / RADIUS / advanced).
+2. Set it to **1 minute** (not hours/days).
+3. Save and apply.
+
+After MB quota is hit, the client is forced to re-auth within about **1 minute**, FreeRADIUS rejects (or accepts with 1s timeout), and access ends. Active vouchers also re-auth every minute — expect more RADIUS auth traffic.
 
 ## Cron (portal host)
 

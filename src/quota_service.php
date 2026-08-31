@@ -28,6 +28,7 @@ require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/session_service.php';
 require_once __DIR__ . '/package_service.php';
 require_once __DIR__ . '/radius_client.php';
+require_once __DIR__ . '/voucher_service.php';
 
 // ── Byte Usage ──────────────────────────────────────────────────
 
@@ -302,12 +303,14 @@ function getSoldVoucherUsageStats(
  * Expire a voucher because it has exceeded its data quota.
  *
  * Steps:
- *  1. Mark voucher 'expired' in DB
+ *  1. Mark voucher 'expired' in DB and force expires_at = now (time ends with quota)
  *  2. Close all active PHP-tracked sessions (reason: quota_exceeded)
- *  3. Insert/update radcheck Auth-Type=Reject so FreeRADIUS denies reconnects
- *     even if the sqlcounter module is not installed
+ *  3. Auth-Type=Reject + Session-Timeout=1 so the next AP re-auth is denied/ended
  *  4. Send CoA Disconnect to the NAS (AP) — best-effort, logged on failure
  *  5. Record QUOTA_EXCEEDED security event
+ *
+ * Pair with EAP650 portal Authentication Timeout = 1 minute so over-quota
+ * clients re-auth quickly and lose access without waiting for the original day timer.
  *
  * @param string $code      Voucher code
  * @param int    $voucherId Row ID from the vouchers table
@@ -318,11 +321,11 @@ function expireVoucherDueToQuota(string $code, int $voucherId): void {
     // 0. Kick live session from AP while radacct row may still be open
     $disconnect = radius_disconnect($code);
 
-    // 1. Mark expired
+    // 1. Mark expired — end time immediately when MB limit is hit
     $stmt = $db->prepare("
         UPDATE vouchers
         SET    status     = 'expired',
-               expires_at = COALESCE(expires_at, CURRENT_TIMESTAMP)
+               expires_at = CURRENT_TIMESTAMP
         WHERE  id = :id
           AND  status = 'active'
     ");
@@ -331,7 +334,7 @@ function expireVoucherDueToQuota(string $code, int $voucherId): void {
     // 2. Close PHP sessions
     closeVoucherSessions($voucherId, 'quota_exceeded', 'blocked');
 
-    // 3. Force FreeRADIUS to reject future auth for this code
+    // 3. Reject next auth; Session-Timeout=1 if Accept somehow slips through
     $stmt = $db->prepare(
         "SELECT id FROM radcheck WHERE username = :u AND attribute = 'Auth-Type'"
     );
@@ -347,6 +350,7 @@ function expireVoucherDueToQuota(string $code, int $voucherId): void {
              VALUES (:u, 'Auth-Type', ':=', 'Reject')"
         )->execute([':u' => $code]);
     }
+    upsertRadAttribute('radreply', $code, 'Session-Timeout', '1');
 
     // 4. CoA already attempted above; log result below
     // 5. Security event

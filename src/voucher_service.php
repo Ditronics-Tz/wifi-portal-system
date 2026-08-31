@@ -588,11 +588,25 @@ function forceExpireVoucher(string $code): bool {
 
     $stmt = $db->prepare("
         UPDATE vouchers
-        SET status = 'expired', expires_at = COALESCE(expires_at, CURRENT_TIMESTAMP)
+        SET status = 'expired', expires_at = CURRENT_TIMESTAMP
         WHERE id = :id
     ");
     $stmt->execute([':id' => $voucherId]);
     closeVoucherSessions((int) $voucherId, 'admin_expire', 'blocked');
+    upsertRadAttribute('radreply', $code, 'Session-Timeout', '1');
+    $chk = $db->prepare("SELECT id FROM radcheck WHERE username = :u AND attribute = 'Auth-Type'");
+    $chk->execute([':u' => $code]);
+    if ($chk->fetch()) {
+        $db->prepare(
+            "UPDATE radcheck SET value = 'Reject', op = ':='
+             WHERE username = :u AND attribute = 'Auth-Type'"
+        )->execute([':u' => $code]);
+    } else {
+        $db->prepare(
+            "INSERT INTO radcheck (username, attribute, op, value)
+             VALUES (:u, 'Auth-Type', ':=', 'Reject')"
+        )->execute([':u' => $code]);
+    }
     recordSecurityEvent('EXPIRED_VOUCHER', 'medium', $code, null, ['source' => 'admin']);
     radius_disconnect($code);
     return true;

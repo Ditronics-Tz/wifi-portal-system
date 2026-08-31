@@ -68,7 +68,7 @@ Accounting records -> radacct (kupitia port 1813)
 | Authentication Mode | PAP |
 | RADIUS Accounting | Enabled (1813), Interim Update disabled |
 | NAS ID | EAP650-Portal-01 |
-| Authentication Timeout | 30 D (inazidi voucher ndefu zaidi ili Session-Timeout ndio idhibiti disconnect halisi) |
+| Authentication Timeout | **1 minute** (forces re-auth so over-quota / expired vouchers lose access quickly when CoA is unavailable) |
 | Portal Logout | Enabled (`portal.tplink.net/portal/logout`) |
 | Landing Page | The Success Page |
 | Portal Customization | External Web Portal → `http://192.168.100.100:8090/` |

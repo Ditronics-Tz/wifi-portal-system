@@ -36,4 +36,4 @@ USB tethering and phone hotspots behind one authenticated MAC will often look li
 
 ## CoA / Disconnect
 
-`radius_disconnect()` sends a Disconnect-Request to `RADIUS_NAS_IP:RADIUS_COA_PORT` (AP `192.168.100.101:3799`). Confirm the EAP firmware accepts RFC 5176. If it does not, “End voucher” still expires the code in the database; the AP may keep the station until Session-Timeout.
+`radius_disconnect()` sends a Disconnect-Request to `RADIUS_NAS_IP:RADIUS_COA_PORT` (AP `192.168.100.101:3799`). Confirm the EAP firmware accepts RFC 5176. If it does not, expire still sets Reject + `Session-Timeout=1`; set portal **Authentication Timeout = 1 minute** so over-quota clients re-auth and are cut off quickly (see [quota-enforcement.md](quota-enforcement.md)).
