@@ -32,14 +32,16 @@ sudo freeradius -XC 2>&1 | grep -i sqlcounter_quota
 
 ## TP-Link EAP650 — interim accounting (required)
 
-On the AP web UI (`http://192.168.100.133`):
+On the AP web UI (likely `http://192.168.100.101` — confirm NAS IP in `radacct`; `.133` may be outdated):
 
-1. **Wireless Control** → your voucher SSID → **Advanced** (or RADIUS settings).
+1. **Wireless Control** → your voucher SSID → **Advanced** / **RADIUS**.
 2. **RADIUS accounting** → enabled, server `192.168.100.100`, port **1813**, same secret as auth.
-3. Enable **Interim Accounting** / **Accounting Update** if the firmware exposes it (interval **60** or **30** seconds).
-4. If there is no interim toggle, check **Portal** → **External RADIUS** → accounting options on your firmware version.
+3. **Interim accounting / Accounting Update** → enable, interval **60** seconds.
+   - EAP650 valid range: **60–86400 s** (below 60 is rejected/ignored).
+   - **60 s** is recommended — matches the portal `Acct-Interim-Interval` in `radreply`.
+4. If there is no interim toggle, the AP may still honour `Acct-Interim-Interval` from FreeRADIUS `radreply` once accounting is enabled.
 
-The portal already sends `Acct-Interim-Interval := 30` in `radreply` for each voucher; the AP must honor it.
+The portal writes `Acct-Interim-Interval := 60` for each voucher when it is first used or reconnected.
 
 ### Confirm interim updates reach FreeRADIUS
 

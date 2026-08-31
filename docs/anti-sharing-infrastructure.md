@@ -14,7 +14,7 @@ This blocks station-to-station traffic. It does **not** stop a phone hotspot (do
 
 ## RADIUS accounting
 
-Keep Accounting enabled toward `192.168.100.100:1813`. Turn **interim updates** on (60s or 30s) — see [quota-enforcement.md](quota-enforcement.md) for EAP650 steps. The portal reads `radacct` rows with `acctstoptime IS NULL` and sends `Acct-Interim-Interval := 30` per voucher.
+Keep Accounting enabled toward `192.168.100.100:1813`. Turn **interim updates** on — **60–86400 s** on the EAP650 (60 s minimum). The portal sends `Acct-Interim-Interval := 60` per voucher in `radreply`. See [quota-enforcement.md](quota-enforcement.md).
 
 ## Firewall / segmentation
 
