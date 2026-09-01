@@ -303,7 +303,15 @@ function upsertRadAttribute(string $table, string $username, string $attribute, 
  *     the voucher in the DB and sends a CoA Disconnect to the AP.
  */
 function applyVoucherRadiusPolicy(string $username, string $planName, int $timeoutSeconds): void {
-    upsertRadAttribute('radreply', $username, 'Session-Timeout', (string) max(1, $timeoutSeconds));
+    $pkg = getPackageByName($planName);
+    $quotaMb = ($pkg && isset($pkg['data_quota_mb'])) ? (int) $pkg['data_quota_mb'] : 0;
+
+    // For data-capped packages: Standalone APs (like TP-Link EAP650) do not support CoA disconnect.
+    // Setting Session-Timeout to 60s forces the AP to re-verify the session with FreeRADIUS every minute.
+    // The moment the MB limit is hit, FreeRADIUS and the portal return Access-Reject.
+    $sessionTimeout = ($quotaMb > 0) ? min($timeoutSeconds, 60) : max(1, $timeoutSeconds);
+
+    upsertRadAttribute('radreply', $username, 'Session-Timeout', (string) max(1, $sessionTimeout));
     upsertRadAttribute('radcheck', $username, 'Simultaneous-Use', '1', ':=');
 
     // Tell the AP to send interim accounting packets every 60 s.
@@ -312,7 +320,6 @@ function applyVoucherRadiusPolicy(string $username, string $planName, int $timeo
     // making server-side byte-counting unreliable mid-session.
     upsertRadAttribute('radreply', $username, 'Acct-Interim-Interval', '60');
 
-    $pkg = getPackageByName($planName);
     if (!$pkg) {
         return;
     }
