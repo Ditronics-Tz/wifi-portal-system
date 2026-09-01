@@ -62,6 +62,8 @@ if (!$ready && !$error && $hasParams && $clientMac && $_SERVER['REQUEST_METHOD']
             $code = $existingCode;
             $ready = true;
             $statusUrl = 'http://' . $_SERVER['HTTP_HOST'] . dirname($_SERVER['SCRIPT_NAME']) . '/status.php?code=' . urlencode($code);
+        } elseif ($result['status'] === 'expired') {
+            $error = 'This voucher has expired (time or data quota reached).';
         }
     }
 }

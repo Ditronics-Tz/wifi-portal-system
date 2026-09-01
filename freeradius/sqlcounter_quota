@@ -9,7 +9,6 @@ sqlcounter sqlcounter_quota {
     dialect = postgresql
     counter_name = Max-All-Octets-Used
     check_name = Max-All-Octets
-    reply_name = Session-Timeout
     key = User-Name
     reset = never
     query = "SELECT COALESCE( \

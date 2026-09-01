@@ -8,6 +8,7 @@ require_once dirname(__DIR__) . '/src/db.php';
 require_once dirname(__DIR__) . '/src/session_service.php';
 require_once dirname(__DIR__) . '/src/package_service.php';
 require_once dirname(__DIR__) . '/src/radius_client.php';
+require_once dirname(__DIR__) . '/src/quota_service.php';
 
 /**
  * Prepare voucher for AP authentication (DB-only, no RADIUS call).
@@ -104,6 +105,14 @@ function prepareVoucherForAuth(string $code, ?string $clientMac = null, ?string 
 
         // 5. Active, not expired → reconnect or reject other device
         if ($voucher['status'] === 'active' && $expiresAt !== null && $expiresAt > $now) {
+            // Check data quota before approving reconnect/re-auth
+            $qs = getVoucherQuotaStatus($code, $voucher['plan_name']);
+            if ($qs['has_quota'] && $qs['exceeded']) {
+                expireVoucherDueToQuota($code, (int) $voucher['id']);
+                $db->commit();
+                return ['status' => 'expired'];
+            }
+
             $policy = evaluateDevicePolicy($voucher, $clientMac);
             if (!$policy['ok']) {
                 $db->commit();

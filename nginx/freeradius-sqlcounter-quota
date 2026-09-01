@@ -82,10 +82,6 @@ sqlcounter sqlcounter_quota {
     # Limit per voucher — written to radcheck by applyVoucherRadiusPolicy().
     check_name = Max-All-Octets
 
-    # No reply attribute needed — Session-Timeout handles time-based limits.
-    # Mid-session byte-level termination is done by the PHP cron (CoA Disconnect).
-    reply_name = Session-Timeout
-
     # Group by RADIUS username (= voucher code).
     key = User-Name
 
