@@ -125,15 +125,15 @@ Every voucher carries **both** limits, whichever hits first ends the session:
 
 - **MB cap** — `data_quota_mb` is mandatory on packages (`validatePackageQuota`).
   Packages without one cannot generate vouchers until the admin sets an MB limit.
-- **Fixed 30 days** — duration is not a choice: package create/update forces
-  2592000s, with clamps again at voucher generation and at first use, so an
-  untouched MB allowance never extends a voucher past one month from first use.
-  Packages differ only by MB quota (and price/bandwidth).
+- **Max 30 days** — durations are validated at package create/update
+  (`validatePackageDuration`, 60s–2592000s), clamped again at voucher
+  generation and at first use, so an untouched MB allowance never extends a
+  voucher past one month from first use. Standard tiers: 3 days / 1 week /
+  2 weeks / 4 weeks.
 
-Repair existing rows once with `migrations/009_policy_caps.sql` (flattens all
-packages, unused vouchers, and active voucher expiry to 30 days; statement 3
-EXTENDS short vouchers already sold — skip it to keep current sessions on
-their sold terms).
+Repair existing rows once with `migrations/009_policy_caps.sql` (clamps
+over-long packages, unused vouchers, and active voucher expiry; statement 3
+shortens already-sold sessions — skip it to grandfather current customers).
 It does not invent MB values: list quota-less packages with the query in the
 migration header and set each MB limit in the admin Packages page.
 

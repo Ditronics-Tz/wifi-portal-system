@@ -214,14 +214,15 @@ function createTables(PDO $db): void {
     $db->exec("CREATE INDEX IF NOT EXISTS idx_security_events_voucher ON security_events (voucher_code)");
 
     // ── Seed default packages if empty ───────────────────────────
-    // Fixed 30-day policy: seeds carry the flat duration; the admin must set
-    // each MB quota (and rename packages by allowance) before generating.
+    // Standard tiers: TSH 500 = 1000 MB / 3 days, TSH 1000 = 2000 MB / week,
+    // TSH 5000 = 10000 MB / 2 weeks, TSH 10000 = 20000 MB / 4 weeks.
     $count = $db->query("SELECT COUNT(*) FROM packages")->fetchColumn();
     if ($count == 0) {
         $defaults = [
-            ['Siku 1', 2592000, 500, null, null, 'Mtandao kwa siku 30', 1],
-            ['Wiki 1', 2592000, 3000, null, null, 'Mtandao kwa siku 30', 2],
-            ['Mwezi 1', 2592000, 10000, null, null, 'Mtandao kwa siku 30', 3],
+            ['Siku 3', 259200, 500, null, 1000, 'MB 1000 kwa siku 3', 1],
+            ['Wiki 1', 604800, 1000, null, 2000, 'MB 2000 kwa siku 7', 2],
+            ['Wiki 2', 1209600, 5000, null, 10000, 'MB 10000 kwa siku 14', 3],
+            ['Mwezi 1', 2419200, 10000, null, 20000, 'MB 20000 kwa siku 28', 4],
         ];
         $stmt = $db->prepare("
             INSERT INTO packages (name, duration_seconds, price, bandwidth_mbps, data_quota_mb, description, sort_order)

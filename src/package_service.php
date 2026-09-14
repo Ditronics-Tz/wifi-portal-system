@@ -7,12 +7,27 @@
 require_once __DIR__ . '/db.php';
 
 // ── Voucher policy caps ─────────────────────────────────────────
-// Every voucher carries BOTH limits: an MB data cap and a fixed 30-day
-// lifetime from first use. Whichever is hit first ends the session.
-// Duration is not a choice: all packages are exactly one month and differ
-// only by MB quota (and price/bandwidth).
+// Every voucher carries BOTH limits: an MB data cap and a time limit of at
+// most 30 days from first use. Whichever is hit first ends the session.
+// Packages are tiered by duration + MB (all durations fit under the 30-day
+// ceiling, e.g. 3 days / 1 week / 2 weeks / 4 weeks).
 const VOUCHER_MAX_DURATION_SECONDS = 2592000; // 30 days
 const VOUCHER_MIN_DURATION_SECONDS = 60;
+
+/**
+ * Duration must be 60s–30 days. Null is allowed (field not being updated).
+ */
+function validatePackageDuration(?int $durationSeconds): void {
+    if ($durationSeconds === null) {
+        return;
+    }
+    if ($durationSeconds < VOUCHER_MIN_DURATION_SECONDS) {
+        throw new Exception('Duration must be at least 60 seconds.');
+    }
+    if ($durationSeconds > VOUCHER_MAX_DURATION_SECONDS) {
+        throw new Exception('Duration cannot exceed 30 days (2592000 seconds).');
+    }
+}
 
 /**
  * An MB cap is mandatory — vouchers without one can never be generated.
@@ -34,8 +49,7 @@ function createPackage(string $name, int $durationSeconds, float $price, ?int $b
     if ($name === '') {
         throw new Exception('Name is required.');
     }
-    // Duration is fixed policy, not a choice — ignore the submitted value.
-    $durationSeconds = VOUCHER_MAX_DURATION_SECONDS;
+    validatePackageDuration($durationSeconds);
     validatePackageQuota($dataQuotaMb);
     if ($price < 0) {
         throw new Exception('Invalid price.');
@@ -75,9 +89,8 @@ function createPackage(string $name, int $durationSeconds, float $price, ?int $b
  * Update a package
  */
 function updatePackage(int $id, array $data, ?int $adminUserId = null): bool {
-    // Duration is fixed policy — any submitted value is forced to 30 days.
     if (array_key_exists('duration_seconds', $data)) {
-        $data['duration_seconds'] = VOUCHER_MAX_DURATION_SECONDS;
+        validatePackageDuration($data['duration_seconds'] !== null ? (int) $data['duration_seconds'] : null);
     }
     if (array_key_exists('data_quota_mb', $data)) {
         validatePackageQuota($data['data_quota_mb']);
