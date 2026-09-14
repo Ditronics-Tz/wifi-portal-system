@@ -77,6 +77,20 @@ function createTables(PDO $db): void {
     $db->exec("CREATE INDEX IF NOT EXISTS idx_radcheck_username ON radcheck(username)");
     $db->exec("CREATE INDEX IF NOT EXISTS idx_radreply_username ON radreply(username)");
 
+    // Quota enforcement indexes (migration 008). radacct is owned by the
+    // FreeRADIUS schema and may not exist on fresh portal installs — probe
+    // first so createTables() never fails when accounting is not yet set up.
+    try {
+        $hasRadacct = $db->query("SELECT to_regclass('public.radacct')")->fetchColumn();
+        if ($hasRadacct) {
+            $db->exec("CREATE INDEX IF NOT EXISTS idx_radacct_username_stop ON radacct (username, acctstoptime)");
+            $db->exec("CREATE INDEX IF NOT EXISTS idx_radacct_open_updated ON radacct (acctupdatetime DESC) WHERE acctstoptime IS NULL");
+        }
+    } catch (Exception $e) {
+        error_log('quota index probe failed: ' . $e->getMessage());
+    }
+    $db->exec("CREATE INDEX IF NOT EXISTS idx_vouchers_status_expires ON vouchers (status, expires_at)");
+
     // ── Users ────────────────────────────────────────────────────
     $db->exec("
         CREATE TABLE IF NOT EXISTS users (

@@ -101,9 +101,30 @@ if ($fp) {
     fclose($fp);
 }
 
+// 4. Accounting hook module
+$hookEnabled = is_link('/etc/freeradius/3.0/mods-enabled/quota_hook')
+    || is_file('/etc/freeradius/3.0/mods-enabled/quota_hook');
+echo 'FreeRADIUS quota_hook enabled: ' . ($hookEnabled ? "YES\n" : "NO — re-run sudo bin/install_freeradius_quota.sh\n");
+if (is_readable($siteFile)) {
+    $siteHook = file_get_contents($siteFile);
+    $inAcct = preg_match('/accounting\s*\{[^}]*quota_hook/s', $siteHook);
+    echo 'quota_hook in accounting{}: ' . ($inAcct ? "YES\n" : "NO\n");
+}
+
+// 5. Health signals: stale interim + 24h CoA failure rate
+$health = getQuotaHealth();
+echo "\nHealth: open_sessions={$health['open_sessions']} stale_interim(>90s)={$health['stale_interim']}";
+echo " coa_fail_24h={$health['coa_fail_24h']}/{$health['coa_total_24h']}\n";
+if ($health['open_sessions'] > 0 && $health['stale_interim'] === $health['open_sessions']) {
+    echo "  WARN: no open session updated in the last 90s — AP interim accounting is likely off.\n";
+}
+if ($health['coa_total_24h'] > 0 && $health['coa_fail_24h'] === $health['coa_total_24h']) {
+    echo "  WARN: every CoA disconnect in the last 24h failed — check RADIUS_NAS_SECRET / AP CoA support.\n";
+}
+
 if ($coaTestUser) {
     echo "\nCoA disconnect test for {$coaTestUser}:\n";
-    $result = radius_disconnect($coaTestUser);
+    $result = radius_disconnect($coaTestUser, null, 1, 5, 2);
     echo ($result['success'] ? '  ACK' : '  FAIL') . ': ' . $result['message'] . "\n";
 }
 

@@ -13,6 +13,10 @@ define('RADIUS_SECRET', 'replace-with-radius-shared-secret');
 define('RADIUS_COA_PORT', 3799);
 define('RADIUS_NAS_IP', '192.168.100.101');
 define('RADIUS_NAS_SECRET', 'replace-with-ap-radius-secret');
+// CoA Disconnect I/O budget: fast defaults keep the quota cron from stalling
+// on dead APs (2s timeout, 1 retry ≈ max ~4s per voucher).
+define('RADIUS_DISCONNECT_TIMEOUT', 2);
+define('RADIUS_DISCONNECT_RETRIES', 1);
 
 define('ADMIN_USERNAME', 'admin');
 define('ADMIN_PASSWORD_HASH', 'replace-with-argon2id-password-hash');

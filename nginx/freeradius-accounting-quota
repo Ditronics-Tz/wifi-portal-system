@@ -1,0 +1,50 @@
+# FreeRADIUS accounting hook — real-time quota cutoff
+# =====================================================
+# File location on server: /etc/freeradius/3.0/mods-available/quota_hook
+# (installed by bin/install_freeradius_quota.sh)
+#
+# PURPOSE
+# -------
+# The sqlcounter_quota module only runs at authentication time, and the
+# bin/enforce_quota.php cron only sweeps every 30s. This exec module closes
+# the gap: on every Interim-Update and Stop, FreeRADIUS calls
+# bin/quota_accounting_hook.php with the session username. The hook expires
+# the voucher within seconds of the AP reporting over-quota usage.
+#
+# INSTALLATION (handled by bin/install_freeradius_quota.sh; manual steps here
+# for reference):
+#
+# 1. mods-available/quota_hook holds the exec definition below.
+# 2. Symlink it into mods-enabled/.
+# 3. Add `quota_hook` to the accounting{} section in sites-enabled/default
+#    AFTER the existing 'sql' line:
+#
+#       accounting {
+#           ...
+#           sql
+#           quota_hook      # <-- add this line
+#           ...
+#       }
+#
+# 4. Restart FreeRADIUS.
+#
+# NOTES
+# -----
+# - The hook is fire-and-forget: `timeout = 5` and `wait = no` so a slow PHP
+#   run can never stall RADIUS accounting responses to the AP.
+# - checkSingleVoucherQuota() early-exits before touching radacct for
+#   vouchers that are not active or have no data cap, so the per-packet cost
+#   is one indexed lookup in the common case.
+# - Concurrent cron + hook expiry is safe: expireVoucherDueToQuota() only
+#   acts when status='active', the second caller is a no-op.
+# - Username is passed as %{User-Name}; the script sanitizes it to
+#   alphanumerics before any DB use.
+
+exec quota_hook {
+    wait = no
+    input_pairs = request
+    output_pairs = reply
+    shell_escape = yes
+    timeout = 5
+    program = "/usr/bin/php /var/www/voucher-portal/bin/quota_accounting_hook.php %{User-Name} %{Acct-Status-Type}"
+}

@@ -126,8 +126,13 @@ function parseRadiusResponse($output) {
 /**
  * Send Disconnect-Request to the NAS (AP). EAP firmware may ignore CoA;
  * the voucher is still expired in the database regardless.
+ *
+ * Defaults are intentionally fast (2s timeout, 1 retry): the quota cron
+ * may disconnect many vouchers per run and must never block 10-15s per
+ * unreachable AP. Callers needing a more patient single shot (admin UI,
+ * --coa-test) should pass explicit $timeout/$retries.
  */
-function radius_disconnect($username, $nasIpAddress = null, $nasPort = 1) {
+function radius_disconnect($username, $nasIpAddress = null, $nasPort = 1, $timeout = null, $retries = null) {
     if (!preg_match('/^[A-Za-z0-9]{1,64}$/', $username)) {
         return ['success' => false, 'message' => 'Invalid username'];
     }
@@ -186,13 +191,23 @@ function radius_disconnect($username, $nasIpAddress = null, $nasPort = 1) {
     }
     $input = implode("\n", $lines) . "\n";
 
-    $target = sprintf('%s:%d', $nasIp, $coaPort);
+    // Send to the NAS that actually holds the session (from radacct) —
+    // the configured default is only a fallback.
+    $target = sprintf('%s:%d', $disconnectTarget, $coaPort);
     $descriptors = [
         0 => ['pipe', 'r'],
         1 => ['pipe', 'w'],
         2 => ['pipe', 'w'],
     ];
-    $command = ['radclient', '-t', '5', '-r', '2', '-c', '1', $target, 'disconnect', $secret];
+    if ($timeout === null) {
+        $timeout = defined('RADIUS_DISCONNECT_TIMEOUT') ? (int) RADIUS_DISCONNECT_TIMEOUT : 2;
+    }
+    if ($retries === null) {
+        $retries = defined('RADIUS_DISCONNECT_RETRIES') ? (int) RADIUS_DISCONNECT_RETRIES : 1;
+    }
+    $timeout = max(1, min(10, (int) $timeout));
+    $retries = max(0, min(3, (int) $retries));
+    $command = ['radclient', '-t', (string) $timeout, '-r', (string) $retries, '-c', '1', $target, 'disconnect', $secret];
 
     $process = proc_open($command, $descriptors, $pipes);
     if (!is_resource($process)) {

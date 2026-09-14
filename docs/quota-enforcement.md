@@ -1,14 +1,15 @@
 # Data quota enforcement
 
-Packages with `data_quota_mb` set get a **1 GB (or configured) lifetime cap** per voucher. Three layers work together:
+Packages with `data_quota_mb` set get a **lifetime cap** per voucher. Four layers work together:
 
 | Layer | What it does | Where |
 |-------|----------------|-------|
 | **1. sqlcounter_quota** | Rejects new logins when cumulative `radacct` bytes ≥ `Max-All-Octets` | FreeRADIUS `authorize` |
-| **2. enforce_quota cron** | Every 30s: reads `radacct`, expires voucher, sends CoA Disconnect | `bin/enforce_quota.php` |
+| **2a. accounting hook** | On every Interim-Update/Stop: checks one voucher, expires it within seconds | FreeRADIUS `accounting` → `bin/quota_accounting_hook.php` |
+| **2b. enforce_quota cron** | Every 30s batched sweep: one aggregated `radacct` query, DB expiry first, fast CoA | `bin/enforce_quota.php` |
 | **3. AP interim accounting** | Updates byte counts on the open `radacct` row during a session | TP-Link EAP650 |
 
-Without layer 3, usage may jump from 0 → full total only when the session stops, so layer 2 cannot cut the session early.
+Without layer 3, usage may jump from 0 → full total only when the session stops, so layers 2a/2b cannot cut the session early. Without layer 2a, worst-case overshoot is `60s interim + 30s cron + re-auth delay`; with it, cutoff lands within seconds of the AP reporting usage.
 
 ## One-time server setup (FreeRADIUS sqlcounter)
 
@@ -89,7 +90,16 @@ On the EAP650 **External Portal / captive portal** settings for the voucher SSID
 
 After MB quota is hit, the client is forced to re-auth within about **1 minute**, FreeRADIUS rejects (or accepts with 1s timeout), and access ends. Active vouchers also re-auth every minute — expect more RADIUS auth traffic.
 
-## Cron (portal host)
+## Accounting hook (real-time cutoff)
+
+Installed by the same script (`quota_hook` exec in `accounting{}`). It calls
+`bin/quota_accounting_hook.php <User-Name>` fire-and-forget (`wait = no`,
+5s timeout) on every Interim-Update/Stop, so accounting responses to the AP
+are never stalled. The hook early-exits on one indexed lookup for vouchers
+that are not active or have no cap; concurrent cron + hook expiry is safe
+(second caller is a no-op via `status='active'` guard).
+
+## Cron (portal host, safety net)
 
 `ditronics_kibada` crontab should include (every 30 seconds):
 
@@ -97,6 +107,23 @@ After MB quota is hit, the client is forced to re-auth within about **1 minute**
 * * * * * /usr/bin/php /var/www/voucher-portal/bin/enforce_quota.php >> ~/logs/voucher-portal/quota.log 2>&1
 * * * * * sleep 30 && /usr/bin/php /var/www/voucher-portal/bin/enforce_quota.php >> ~/logs/voucher-portal/quota.log 2>&1
 ```
+
+The sweep uses one aggregated `radacct` query for all vouchers, skips
+usage-cache writes when unchanged, expires in the DB before sending CoA,
+and uses fast disconnects (2s timeout, 1 retry — see `RADIUS_DISCONNECT_TIMEOUT`
+/ `RADIUS_DISCONNECT_RETRIES` in `config.php`).
+
+Apply the performance indexes once:
+
+```bash
+psql -U radius -d radius -f migrations/008_quota_perf.sql
+```
+
+## Monitoring
+
+`bin/verify_quota_setup.php` now also reports `quota_hook` install status,
+stale interim sessions (open rows not updated for >90s ⇒ AP interim off),
+and the 24h CoA failure rate from `QUOTA_EXCEEDED` events.
 
 ## Troubleshooting
 

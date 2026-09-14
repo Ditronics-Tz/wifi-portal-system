@@ -2,20 +2,27 @@
 /**
  * Data Quota Enforcement Service
  *
- * Two enforcement layers work together:
+ * Three enforcement layers work together:
  *
  *  Layer 1 — FreeRADIUS sqlcounter_quota module (real-time, server-side):
  *    Reads Max-All-Octets from radcheck and rejects Access-Requests the moment
  *    cumulative bytes in radacct exceed the limit.  No PHP involvement needed.
  *    Requires the module to be configured (see nginx/freeradius-sqlcounter-quota).
  *
- *  Layer 2 — PHP cron (this service via bin/enforce_quota.php, every 1 min):
- *    Polls radacct directly.  When a voucher is over quota it:
- *      - marks the voucher 'expired' in the DB
+ *  Layer 2a — accounting hook (bin/quota_accounting_hook.php, via the
+ *    `quota_hook` exec in nginx/freeradius-accounting-quota): runs on every
+ *    Interim-Update/Stop, so an over-quota voucher is expired within seconds
+ *    of the AP reporting usage instead of waiting for the cron sweep.
+ *
+ *  Layer 2b — PHP cron (this service via bin/enforce_quota.php, every 30s):
+ *    Batched sweep over all active quota vouchers with one aggregated radacct
+ *    query.  When a voucher is over quota it:
+ *      - marks the voucher 'expired' in the DB first (re-auth is blocked even
+ *        if the AP never answers CoA)
  *      - closes all PHP-tracked sessions
  *      - inserts Auth-Type=Reject into radcheck (belt-and-suspenders against
  *        reconnects if the sqlcounter module is not yet configured)
- *      - sends a CoA Disconnect packet to the AP to terminate the live session
+ *      - sends a fast CoA Disconnect packet to the AP (best-effort, 2s/1 retry)
  *      - logs a QUOTA_EXCEEDED security event
  *
  * Requires:
@@ -302,6 +309,11 @@ function getSoldVoucherUsageStats(
 /**
  * Expire a voucher because it has exceeded its data quota.
  *
+ * Order matters: the DB is updated FIRST so re-auth is blocked even when the
+ * AP never answers CoA. The disconnect goes last and uses the fast
+ * non-blocking defaults (2s timeout, 1 retry) so a dead AP cannot stall the
+ * cron sweep.
+ *
  * Steps:
  *  1. Mark voucher 'expired' in DB and force expires_at = now (time ends with quota)
  *  2. Close all active PHP-tracked sessions (reason: quota_exceeded)
@@ -314,14 +326,15 @@ function getSoldVoucherUsageStats(
  *
  * @param string $code      Voucher code
  * @param int    $voucherId Row ID from the vouchers table
+ * @param string $source    Where the expiry was triggered from (cron or accounting hook)
+ * @param int    $usedBytes Precomputed byte total (avoids a second radacct SUM)
  */
-function expireVoucherDueToQuota(string $code, int $voucherId): void {
+function expireVoucherDueToQuota(string $code, int $voucherId, string $source = 'quota_enforcement_cron', int $usedBytes = 0): void {
     $db = getDB();
 
-    // 0. Kick live session from AP while radacct row may still be open
-    $disconnect = radius_disconnect($code);
-
-    // 1. Mark expired — end time immediately when MB limit is hit
+    // 1. Mark expired — end time immediately when MB limit is hit.
+    //    Guarded by status='active' so concurrent cron + accounting-hook runs
+    //    cannot double-expire (second caller becomes a no-op).
     $stmt = $db->prepare("
         UPDATE vouchers
         SET    status     = 'expired',
@@ -330,6 +343,9 @@ function expireVoucherDueToQuota(string $code, int $voucherId): void {
           AND  status = 'active'
     ");
     $stmt->execute([':id' => $voucherId]);
+    if ($stmt->rowCount() === 0) {
+        return;
+    }
 
     // 2. Close PHP sessions
     closeVoucherSessions($voucherId, 'quota_exceeded', 'blocked');
@@ -352,11 +368,16 @@ function expireVoucherDueToQuota(string $code, int $voucherId): void {
     }
     upsertRadAttribute('radreply', $code, 'Session-Timeout', '1');
 
-    // 4. CoA already attempted above; log result below
+    // 4. Kick the live session last — best-effort with fast timeouts so one
+    //    dead AP cannot stall the sweep over many vouchers.
+    $disconnect = radius_disconnect($code);
+
     // 5. Security event
-    $usedBytes = getVoucherBytesUsed($code);
+    if ($usedBytes <= 0) {
+        $usedBytes = getVoucherBytesUsed($code);
+    }
     recordSecurityEvent('QUOTA_EXCEEDED', 'medium', $code, null, [
-        'source'          => 'quota_enforcement_cron',
+        'source'          => $source,
         'used_bytes'      => $usedBytes,
         'used_mb'         => round($usedBytes / (1024 * 1024), 2),
         'disconnect_sent' => $disconnect['success'],
@@ -364,10 +385,93 @@ function expireVoucherDueToQuota(string $code, int $voucherId): void {
     ]);
 
     error_log(sprintf(
-        '[quota] Voucher %s expired — quota exceeded (%.2f MB used)',
+        '[quota] Voucher %s expired — quota exceeded (%.2f MB used, source=%s)',
         $code,
-        $usedBytes / (1024 * 1024)
+        $usedBytes / (1024 * 1024),
+        $source
     ));
+}
+
+/**
+ * Fast single-voucher quota check for the accounting hook
+ * (bin/quota_accounting_hook.php). Early-exits before touching radacct when
+ * the voucher is not active or its package has no data cap.
+ *
+ * @return array{checked: bool, exceeded: bool, used_bytes: int, quota_bytes: int}
+ */
+function checkSingleVoucherQuota(string $code): array {
+    $none = ['checked' => false, 'exceeded' => false, 'used_bytes' => 0, 'quota_bytes' => 0];
+    if (!preg_match('/^[A-Za-z0-9]{1,64}$/', $code)) {
+        return $none;
+    }
+    $db = getDB();
+    try {
+        $stmt = $db->prepare("
+            SELECT v.id, v.status, COALESCE(p.data_quota_mb, 0)::int AS quota_mb
+            FROM vouchers v
+            LEFT JOIN packages p ON p.name = v.plan_name
+                AND COALESCE(p.is_deleted, false) = false
+            WHERE v.code = :code
+            LIMIT 1
+        ");
+        $stmt->execute([':code' => $code]);
+        $row = $stmt->fetch();
+        if (!$row || $row['status'] !== 'active' || (int) $row['quota_mb'] <= 0) {
+            return $none;
+        }
+        $quotaBytes = (int) $row['quota_mb'] * 1024 * 1024;
+        $usedBytes = getVoucherBytesUsed($code);
+        if ($usedBytes > $quotaBytes) {
+            expireVoucherDueToQuota($code, (int) $row['id'], 'quota_accounting_hook', $usedBytes);
+            return ['checked' => true, 'exceeded' => true, 'used_bytes' => $usedBytes, 'quota_bytes' => $quotaBytes];
+        }
+        return ['checked' => true, 'exceeded' => false, 'used_bytes' => $usedBytes, 'quota_bytes' => $quotaBytes];
+    } catch (Exception $e) {
+        error_log('[quota] checkSingleVoucherQuota(' . $code . '): ' . $e->getMessage());
+        return $none;
+    }
+}
+
+/**
+ * Quota health signals for bin/verify_quota_setup.php and future monitoring:
+ * stale interim accounting (open sessions not updated for >90s) and the
+ * 24h CoA failure rate from QUOTA_EXCEEDED events.
+ *
+ * @return array{stale_interim: int, open_sessions: int, coa_fail_24h: int, coa_total_24h: int}
+ */
+function getQuotaHealth(): array {
+    $health = ['stale_interim' => 0, 'open_sessions' => 0, 'coa_fail_24h' => 0, 'coa_total_24h' => 0];
+    $db = getDB();
+    try {
+        $row = $db->query("
+            SELECT COUNT(*) AS open,
+                   COUNT(*) FILTER (WHERE acctupdatetime < NOW() - INTERVAL '90 seconds') AS stale
+            FROM radacct
+            WHERE acctstoptime IS NULL
+        ")->fetch();
+        if ($row) {
+            $health['open_sessions'] = (int) ($row['open'] ?? 0);
+            $health['stale_interim'] = (int) ($row['stale'] ?? 0);
+        }
+    } catch (Exception $e) {
+        // radacct optional — leave zeros
+    }
+    try {
+        $row = $db->query("
+            SELECT COUNT(*) AS total,
+                   COUNT(*) FILTER (WHERE metadata->>'disconnect_sent' = 'false') AS failed
+            FROM security_events
+            WHERE event_type = 'QUOTA_EXCEEDED'
+              AND created_at > NOW() - INTERVAL '24 hours'
+        ")->fetch();
+        if ($row) {
+            $health['coa_total_24h'] = (int) ($row['total'] ?? 0);
+            $health['coa_fail_24h'] = (int) ($row['failed'] ?? 0);
+        }
+    } catch (Exception $e) {
+        // security_events optional — leave zeros
+    }
+    return $health;
 }
 
 // ── Main Enforcement Loop ───────────────────────────────────────
@@ -377,7 +481,12 @@ function expireVoucherDueToQuota(string $code, int $voucherId): void {
  * that have exceeded their allowance.  Safe to run repeatedly; skips vouchers
  * whose package has no quota set.
  *
- * Called by bin/enforce_quota.php (cron, recommended every 1 minute).
+ * Batched: ONE aggregated radacct query returns byte totals for all candidate
+ * vouchers (instead of one SUM per voucher), usage cache updates are batched
+ * per voucher only when the value changed, and DB expiry for all over-quota
+ * vouchers lands before any slow CoA packet goes out.
+ *
+ * Called by bin/enforce_quota.php (cron, recommended every 30 seconds).
  *
  * @return array{checked: int, expired: int, errors: int}
  */
@@ -392,51 +501,73 @@ function runQuotaEnforcement(): array {
         return ['checked' => 0, 'expired' => 0, 'errors' => 1];
     }
 
-    // Active vouchers with a data-capped package, including any with a live radacct row
-    $stmt = $db->query("
-        SELECT v.id, v.code, v.plan_name
-        FROM   vouchers v
-        INNER JOIN packages p ON p.name = v.plan_name
-            AND COALESCE(p.data_quota_mb, 0) > 0
-            AND COALESCE(p.is_deleted, false) = false
-        WHERE  v.status = 'active'
-          AND (
-              v.expires_at > NOW()
-              OR EXISTS (
-                  SELECT 1 FROM radacct r
-                  WHERE r.username = v.code AND r.acctstoptime IS NULL
+    // One query: active quota vouchers + lifetime byte totals + live-session flag.
+    try {
+        $stmt = $db->query("
+            SELECT v.id, v.code, v.plan_name,
+                   COALESCE(p.data_quota_mb, 0)::int AS quota_mb,
+                   COALESCE(ra.total_bytes, 0)::bigint AS used_bytes,
+                   EXISTS (
+                       SELECT 1 FROM radacct r
+                       WHERE r.username = v.code AND r.acctstoptime IS NULL
+                   ) AS has_live
+            FROM   vouchers v
+            INNER JOIN packages p ON p.name = v.plan_name
+                AND COALESCE(p.data_quota_mb, 0) > 0
+                AND COALESCE(p.is_deleted, false) = false
+            LEFT JOIN (
+                SELECT username, SUM(acctinputoctets + acctoutputoctets)::bigint AS total_bytes
+                FROM radacct
+                GROUP BY username
+            ) ra ON ra.username = v.code
+            WHERE  v.status = 'active'
+              AND (
+                  v.expires_at > NOW()
+                  OR EXISTS (
+                      SELECT 1 FROM radacct r
+                      WHERE r.username = v.code AND r.acctstoptime IS NULL
+                  )
               )
-          )
-        ORDER  BY v.id
-    ");
+            ORDER  BY v.id
+        ");
+        $candidates = $stmt->fetchAll();
+    } catch (Exception $e) {
+        error_log('[quota] enforcement batch query failed: ' . $e->getMessage());
+        return ['checked' => 0, 'expired' => 0, 'errors' => 1];
+    }
 
     $checked = 0;
     $expired = 0;
     $errors  = 0;
+    $cacheStmt = $db->prepare(
+        "UPDATE vouchers SET data_bytes_used = :b1 WHERE id = :id AND COALESCE(data_bytes_used, 0) != :b2"
+    );
 
-    while ($voucher = $stmt->fetch()) {
+    foreach ($candidates as $voucher) {
         try {
-            $qs = getVoucherQuotaStatus($voucher['code'], $voucher['plan_name']);
-
-            if (!$qs['has_quota']) {
+            $quotaMb = (int) ($voucher['quota_mb'] ?? 0);
+            if ($quotaMb <= 0) {
                 continue; // Package has no data cap — skip
             }
-
             $checked++;
+            $usedBytes = (int) ($voucher['used_bytes'] ?? 0);
 
-            // Cache the current byte count back onto the voucher row so the
-            // status page can display usage without querying radacct each load.
-            $db->prepare(
-                "UPDATE vouchers SET data_bytes_used = :bytes WHERE id = :id"
-            )->execute([':bytes' => $qs['used_bytes'], ':id' => (int) $voucher['id']]);
+            // Cache the byte count so the status page avoids a radacct join.
+            // Guarded by != so idle vouchers cost no write.
+            $cacheStmt->execute([':b1' => $usedBytes, ':b2' => $usedBytes, ':id' => (int) $voucher['id']]);
 
-            if ($qs['exceeded']) {
-                expireVoucherDueToQuota($voucher['code'], (int) $voucher['id']);
+            if ($usedBytes > $quotaMb * 1024 * 1024) {
+                expireVoucherDueToQuota(
+                    $voucher['code'],
+                    (int) $voucher['id'],
+                    'quota_enforcement_cron',
+                    $usedBytes
+                );
                 $expired++;
             }
         } catch (Exception $e) {
             $errors++;
-            error_log('[quota] Error on voucher ' . $voucher['code'] . ': ' . $e->getMessage());
+            error_log('[quota] Error on voucher ' . ($voucher['code'] ?? '?') . ': ' . $e->getMessage());
         }
     }
 

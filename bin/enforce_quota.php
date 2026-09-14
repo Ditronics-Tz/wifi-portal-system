@@ -20,11 +20,17 @@
  * 2. Open the www-data crontab:
  *      sudo -u www-data crontab -e
  *
- * 3. Add the line below (runs every minute):
+ * 3. Add the lines below (runs every 30 seconds — the accounting hook in
+ *    nginx/freeradius-accounting-quota handles real-time cutoff; this sweep
+ *    is the safety net for missed accounting packets):
  *      * * * * * /usr/bin/php /var/www/voucher-portal/bin/enforce_quota.php >> /var/log/voucher-portal/quota.log 2>&1
+ *      * * * * * sleep 30 && /usr/bin/php /var/www/voucher-portal/bin/enforce_quota.php >> /var/log/voucher-portal/quota.log 2>&1
  *
  * The script is idempotent — running it more frequently is safe.
- * An advisory file lock prevents two concurrent runs from racing.
+ * One aggregated radacct query covers all vouchers (no per-voucher SUM),
+ * usage-cache writes are skipped when unchanged, and DB expiry lands before
+ * any CoA packet. An advisory file lock prevents two concurrent runs.
+ * Concurrent accounting-hook expiry is safe (second caller is a no-op).
  */
 
 if (php_sapi_name() !== 'cli') {
