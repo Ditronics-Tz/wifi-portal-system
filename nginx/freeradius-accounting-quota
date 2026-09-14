@@ -43,7 +43,6 @@
 exec quota_hook {
     wait = no
     input_pairs = request
-    output_pairs = reply
     shell_escape = yes
     timeout = 5
     program = "/usr/bin/php /var/www/voucher-portal/bin/quota_accounting_hook.php %{User-Name} %{Acct-Status-Type}"
