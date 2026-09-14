@@ -231,14 +231,12 @@ $pageTitle = 'Packages';
                 <div class="stat-icon-wrap icon-secondary"><?php echo hi('PackageIcon', 20); ?></div>
                 <h3 class="modal-title" style="margin-bottom: 0;">Add New Package</h3>
             </div>
-            <p class="admin-card-subtitle" style="margin-top: 0; margin-bottom: var(--space-5);">Set the data allowance, lifetime (max 30 days) and price.</p>
             <form method="POST" action="">
                 <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($csrf); ?>">
                 <input type="hidden" name="action" value="create">
                 <div class="form-group">
                     <label for="name">Package name *</label>
                     <input type="text" id="name" name="name" class="form-input" required maxlength="64" placeholder="e.g. 5 GB" autocomplete="off">
-                    <div class="form-hint">Name it by allowance so sellers pick the right tier.</div>
                 </div>
                 <div class="form-group">
                     <label for="data_quota_mb">Data allowance (MB) *</label>
@@ -249,13 +247,11 @@ $pageTitle = 'Packages';
                         <button type="button" class="btn btn-tiny btn-ghost" onclick="setQuota('data_quota_mb', 5120)">5 GB</button>
                         <button type="button" class="btn btn-tiny btn-ghost" onclick="setQuota('data_quota_mb', 10240)">10 GB</button>
                     </div>
-                    <div class="form-hint">Session ends when the data or the lifetime runs out, whichever comes first.</div>
                 </div>
                 <div class="form-row">
                     <div class="form-group">
                         <label for="duration_seconds">Lifetime (seconds) *</label>
                         <input type="number" id="duration_seconds" name="duration_seconds" class="form-input" required min="60" max="2592000" step="1" placeholder="259200" inputmode="numeric">
-                        <div class="form-hint">259200 = 3 days, 604800 = 1 week, 1209600 = 2 weeks, 2419200 = 4 weeks (max 30 days).</div>
                     </div>
                     <div class="form-group">
                         <label for="price">Price (TZS) *</label>
@@ -265,12 +261,11 @@ $pageTitle = 'Packages';
                 <div class="form-row">
                     <div class="form-group">
                         <label for="bandwidth_mbps">Speed limit (Mbps)</label>
-                        <input type="number" id="bandwidth_mbps" name="bandwidth_mbps" class="form-input" min="1" step="1" placeholder="10" inputmode="numeric">
-                        <div class="form-hint">Leave blank for unlimited.</div>
+                        <input type="number" id="bandwidth_mbps" name="bandwidth_mbps" class="form-input" min="1" step="1" placeholder="Unlimited" inputmode="numeric">
                     </div>
                     <div class="form-group">
                         <label for="description">Description</label>
-                        <input type="text" id="description" name="description" class="form-input" maxlength="255" placeholder="Short description of this package" autocomplete="off">
+                        <input type="text" id="description" name="description" class="form-input" maxlength="255" placeholder="Optional" autocomplete="off">
                     </div>
                 </div>
                 <div class="modal-actions">
@@ -288,7 +283,6 @@ $pageTitle = 'Packages';
                 <div class="stat-icon-wrap icon-secondary"><?php echo hi('PackageIcon', 20); ?></div>
                 <h3 class="modal-title" style="margin-bottom: 0;">Edit Package</h3>
             </div>
-            <p class="admin-card-subtitle" style="margin-top: 0; margin-bottom: var(--space-5);">Set the data allowance, lifetime (max 30 days) and price.</p>
             <form method="POST" action="">
                 <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($csrf); ?>">
                 <input type="hidden" name="action" value="update">
@@ -303,15 +297,14 @@ $pageTitle = 'Packages';
                         <button type="button" class="btn btn-tiny btn-ghost" onclick="setQuota('edit_quota', 5120)">5 GB</button>
                         <button type="button" class="btn btn-tiny btn-ghost" onclick="setQuota('edit_quota', 10240)">10 GB</button>
                     </div>
-                    <div class="form-hint">Session ends when the data or the lifetime runs out, whichever comes first.</div>
                 </div>
                 <div class="form-row">
-                    <div class="form-group"><label>Lifetime (seconds)</label><input type="number" id="edit_duration" name="duration_seconds" class="form-input" required min="60" max="2592000" step="1" inputmode="numeric"><div class="form-hint">Max 30 days.</div></div>
+                    <div class="form-group"><label>Lifetime (seconds)</label><input type="number" id="edit_duration" name="duration_seconds" class="form-input" required min="60" max="2592000" step="1" inputmode="numeric"></div>
                     <div class="form-group"><label>Price (TZS)</label><input type="number" id="edit_price" name="price" class="form-input" required min="0" step="50" inputmode="numeric"></div>
                 </div>
                 <div class="form-row">
-                    <div class="form-group"><label>Speed limit (Mbps)</label><input type="number" id="edit_bw" name="bandwidth_mbps" class="form-input" min="1" step="1" inputmode="numeric"><div class="form-hint">Leave blank for unlimited.</div></div>
-                    <div class="form-group"><label>Description</label><input type="text" id="edit_desc" name="description" class="form-input" maxlength="255" autocomplete="off"></div>
+                    <div class="form-group"><label>Speed limit (Mbps)</label><input type="number" id="edit_bw" name="bandwidth_mbps" class="form-input" min="1" step="1" placeholder="Unlimited" inputmode="numeric"></div>
+                    <div class="form-group"><label>Description</label><input type="text" id="edit_desc" name="description" class="form-input" maxlength="255" placeholder="Optional" autocomplete="off"></div>
                 </div>
                 <div class="modal-actions">
                     <button type="submit" class="btn btn-primary btn-small" style="flex: 1;">Save</button>
