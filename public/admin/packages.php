@@ -227,41 +227,45 @@ $pageTitle = 'Packages';
     <!-- Create Modal -->
     <div id="createModal" class="modal-overlay">
         <div class="modal">
-            <h3 class="modal-title">Add New Package</h3>
+            <div style="display: flex; gap: var(--space-3); align-items: center; margin-bottom: var(--space-1);">
+                <div class="stat-icon-wrap icon-secondary"><?php echo hi('PackageIcon', 20); ?></div>
+                <h3 class="modal-title" style="margin-bottom: 0;">Add New Package</h3>
+            </div>
+            <p class="admin-card-subtitle" style="margin-top: 0; margin-bottom: var(--space-5);">Every package lasts 30 days from first use — set the data allowance and price.</p>
             <form method="POST" action="">
                 <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($csrf); ?>">
                 <input type="hidden" name="action" value="create">
+                <input type="hidden" name="duration_seconds" value="2592000">
                 <div class="form-group">
-                    <label for="name">Package Name *</label>
-                    <input type="text" id="name" name="name" class="form-input" required placeholder="1 Day">
+                    <label for="name">Package name *</label>
+                    <input type="text" id="name" name="name" class="form-input" required maxlength="64" placeholder="e.g. 5 GB" autocomplete="off">
+                    <div class="form-hint">Name it by allowance so sellers pick the right tier.</div>
+                </div>
+                <div class="form-group">
+                    <label for="data_quota_mb">Data allowance (MB) *</label>
+                    <input type="number" id="data_quota_mb" name="data_quota_mb" class="form-input" required min="1" step="1" placeholder="1024" inputmode="numeric">
+                    <div style="display: flex; gap: var(--space-2); margin-top: var(--space-2);">
+                        <button type="button" class="btn btn-tiny btn-ghost" onclick="setQuota('data_quota_mb', 1024)">1 GB</button>
+                        <button type="button" class="btn btn-tiny btn-ghost" onclick="setQuota('data_quota_mb', 2048)">2 GB</button>
+                        <button type="button" class="btn btn-tiny btn-ghost" onclick="setQuota('data_quota_mb', 5120)">5 GB</button>
+                        <button type="button" class="btn btn-tiny btn-ghost" onclick="setQuota('data_quota_mb', 10240)">10 GB</button>
+                    </div>
+                    <div class="form-hint">Session ends when the data or the 30 days run out, whichever comes first.</div>
                 </div>
                 <div class="form-row">
-                    <div class="form-group">
-                        <label>Duration</label>
-                        <input type="hidden" name="duration_seconds" value="2592000">
-                        <div class="form-input" style="background: var(--bg-muted);">30 days (fixed for all packages)</div>
-                        <div class="form-hint">Every voucher expires 1 month after first use. Packages differ by data quota and price.</div>
-                    </div>
                     <div class="form-group">
                         <label for="price">Price (TZS) *</label>
-                        <input type="number" id="price" name="price" class="form-input" required min="0" step="50" placeholder="500">
-                    </div>
-                </div>
-                <div class="form-row">
-                    <div class="form-group">
-                        <label for="bandwidth_mbps">Bandwidth (Mbps)</label>
-                        <input type="number" id="bandwidth_mbps" name="bandwidth_mbps" class="form-input" min="1" placeholder="10">
-                        <div class="form-hint">Speed limit. Leave blank for unlimited.</div>
+                        <input type="number" id="price" name="price" class="form-input" required min="0" step="50" placeholder="500" inputmode="numeric">
                     </div>
                     <div class="form-group">
-                        <label for="data_quota_mb">Data Quota (MB) *</label>
-                        <input type="number" id="data_quota_mb" name="data_quota_mb" class="form-input" required min="1" placeholder="1024">
-                        <div class="form-hint">Data allowance (required). Session ends when MB or time runs out, whichever comes first.</div>
+                        <label for="bandwidth_mbps">Speed limit (Mbps)</label>
+                        <input type="number" id="bandwidth_mbps" name="bandwidth_mbps" class="form-input" min="1" step="1" placeholder="10" inputmode="numeric">
+                        <div class="form-hint">Leave blank for unlimited.</div>
                     </div>
                 </div>
                 <div class="form-group">
                     <label for="description">Description</label>
-                    <input type="text" id="description" name="description" class="form-input" placeholder="Short description of this package">
+                    <input type="text" id="description" name="description" class="form-input" maxlength="255" placeholder="Short description of this package" autocomplete="off">
                 </div>
                 <div class="modal-actions">
                     <button type="submit" class="btn btn-primary btn-small" style="flex: 1;">Create Package</button>
@@ -274,21 +278,33 @@ $pageTitle = 'Packages';
     <!-- Edit Modal -->
     <div id="editModal" class="modal-overlay">
         <div class="modal">
-            <h3 class="modal-title">Edit Package</h3>
+            <div style="display: flex; gap: var(--space-3); align-items: center; margin-bottom: var(--space-1);">
+                <div class="stat-icon-wrap icon-secondary"><?php echo hi('PackageIcon', 20); ?></div>
+                <h3 class="modal-title" style="margin-bottom: 0;">Edit Package</h3>
+            </div>
+            <p class="admin-card-subtitle" style="margin-top: 0; margin-bottom: var(--space-5);">Every package lasts 30 days from first use — set the data allowance and price.</p>
             <form method="POST" action="">
                 <input type="hidden" name="csrf_token" value="<?php echo htmlspecialchars($csrf); ?>">
                 <input type="hidden" name="action" value="update">
                 <input type="hidden" name="package_id" id="edit_id" value="">
-                <div class="form-group"><label>Name</label><input type="text" id="edit_name" name="name" class="form-input" required></div>
-                <div class="form-row">
-                    <div class="form-group"><label>Duration</label><input type="hidden" id="edit_duration" name="duration_seconds" value="2592000"><div class="form-input" style="background: var(--bg-muted);">30 days (fixed for all packages)</div></div>
-                    <div class="form-group"><label>Price (TZS)</label><input type="number" id="edit_price" name="price" class="form-input" required min="0" step="50"></div>
+                <input type="hidden" id="edit_duration" name="duration_seconds" value="2592000">
+                <div class="form-group"><label>Name</label><input type="text" id="edit_name" name="name" class="form-input" required maxlength="64" autocomplete="off"></div>
+                <div class="form-group">
+                    <label>Data allowance (MB) *</label>
+                    <input type="number" id="edit_quota" name="data_quota_mb" class="form-input" required min="1" step="1" inputmode="numeric">
+                    <div style="display: flex; gap: var(--space-2); margin-top: var(--space-2);">
+                        <button type="button" class="btn btn-tiny btn-ghost" onclick="setQuota('edit_quota', 1024)">1 GB</button>
+                        <button type="button" class="btn btn-tiny btn-ghost" onclick="setQuota('edit_quota', 2048)">2 GB</button>
+                        <button type="button" class="btn btn-tiny btn-ghost" onclick="setQuota('edit_quota', 5120)">5 GB</button>
+                        <button type="button" class="btn btn-tiny btn-ghost" onclick="setQuota('edit_quota', 10240)">10 GB</button>
+                    </div>
+                    <div class="form-hint">Session ends when the data or the 30 days run out, whichever comes first.</div>
                 </div>
                 <div class="form-row">
-                    <div class="form-group"><label>Bandwidth (Mbps)</label><input type="number" id="edit_bw" name="bandwidth_mbps" class="form-input" min="1"></div>
-                    <div class="form-group"><label>Data Quota (MB) *</label><input type="number" id="edit_quota" name="data_quota_mb" class="form-input" required min="1"></div>
+                    <div class="form-group"><label>Price (TZS)</label><input type="number" id="edit_price" name="price" class="form-input" required min="0" step="50" inputmode="numeric"></div>
+                    <div class="form-group"><label>Speed limit (Mbps)</label><input type="number" id="edit_bw" name="bandwidth_mbps" class="form-input" min="1" step="1" inputmode="numeric"><div class="form-hint">Leave blank for unlimited.</div></div>
                 </div>
-                <div class="form-group"><label>Description</label><input type="text" id="edit_desc" name="description" class="form-input"></div>
+                <div class="form-group"><label>Description</label><input type="text" id="edit_desc" name="description" class="form-input" maxlength="255" autocomplete="off"></div>
                 <div class="modal-actions">
                     <button type="submit" class="btn btn-primary btn-small" style="flex: 1;">Save</button>
                     <button type="button" class="btn btn-secondary btn-small" style="flex: 1;" onclick="closeEditModal()">Cancel</button>
@@ -298,6 +314,7 @@ $pageTitle = 'Packages';
     </div>
 
     <script>
+        function setQuota(inputId, mb) { document.getElementById(inputId).value = mb; }
         function openCreateModal() { document.getElementById('createModal').classList.add('open'); }
         function closeCreateModal() { document.getElementById('createModal').classList.remove('open'); }
         document.getElementById('createModal').addEventListener('click', function(e) { if (e.target === this) closeCreateModal(); });
