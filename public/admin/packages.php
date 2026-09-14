@@ -111,7 +111,7 @@ $pageTitle = 'Packages';
 <?php require dirname(__DIR__, 2) . '/src/admin_header.php'; ?>
             <div class="section-header">
                 <h1>Package Management</h1>
-                <p>Manage the WiFi packages that sellers will use to generate vouchers.</p>
+                <p>Manage the WiFi packages that sellers will use to generate vouchers. Policy: every package needs an MB data cap and max 30-day duration — the session ends on whichever runs out first.</p>
             </div>
 
             <?php if ($message): ?><div class="alert alert-success"><span><?php echo htmlspecialchars($message); ?></span></div><?php endif; ?>
@@ -237,9 +237,10 @@ $pageTitle = 'Packages';
                 </div>
                 <div class="form-row">
                     <div class="form-group">
-                        <label for="duration_seconds">Duration (seconds) *</label>
-                        <input type="number" id="duration_seconds" name="duration_seconds" class="form-input" required min="60" placeholder="86400">
-                        <div class="form-hint">86400 = 1 day, 604800 = 1 week, 2592000 = 1 month</div>
+                        <label>Duration</label>
+                        <input type="hidden" name="duration_seconds" value="2592000">
+                        <div class="form-input" style="background: var(--bg-muted);">30 days (fixed for all packages)</div>
+                        <div class="form-hint">Every voucher expires 1 month after first use. Packages differ by data quota and price.</div>
                     </div>
                     <div class="form-group">
                         <label for="price">Price (TZS) *</label>
@@ -253,9 +254,9 @@ $pageTitle = 'Packages';
                         <div class="form-hint">Speed limit. Leave blank for unlimited.</div>
                     </div>
                     <div class="form-group">
-                        <label for="data_quota_mb">Data Quota (MB)</label>
-                        <input type="number" id="data_quota_mb" name="data_quota_mb" class="form-input" min="1" placeholder="1024">
-                        <div class="form-hint">Data allowance. Leave blank for unlimited.</div>
+                        <label for="data_quota_mb">Data Quota (MB) *</label>
+                        <input type="number" id="data_quota_mb" name="data_quota_mb" class="form-input" required min="1" placeholder="1024">
+                        <div class="form-hint">Data allowance (required). Session ends when MB or time runs out, whichever comes first.</div>
                     </div>
                 </div>
                 <div class="form-group">
@@ -280,12 +281,12 @@ $pageTitle = 'Packages';
                 <input type="hidden" name="package_id" id="edit_id" value="">
                 <div class="form-group"><label>Name</label><input type="text" id="edit_name" name="name" class="form-input" required></div>
                 <div class="form-row">
-                    <div class="form-group"><label>Duration (seconds)</label><input type="number" id="edit_duration" name="duration_seconds" class="form-input" required min="60"></div>
+                    <div class="form-group"><label>Duration</label><input type="hidden" id="edit_duration" name="duration_seconds" value="2592000"><div class="form-input" style="background: var(--bg-muted);">30 days (fixed for all packages)</div></div>
                     <div class="form-group"><label>Price (TZS)</label><input type="number" id="edit_price" name="price" class="form-input" required min="0" step="50"></div>
                 </div>
                 <div class="form-row">
                     <div class="form-group"><label>Bandwidth (Mbps)</label><input type="number" id="edit_bw" name="bandwidth_mbps" class="form-input" min="1"></div>
-                    <div class="form-group"><label>Data Quota (MB)</label><input type="number" id="edit_quota" name="data_quota_mb" class="form-input" min="1"></div>
+                    <div class="form-group"><label>Data Quota (MB) *</label><input type="number" id="edit_quota" name="data_quota_mb" class="form-input" required min="1"></div>
                 </div>
                 <div class="form-group"><label>Description</label><input type="text" id="edit_desc" name="description" class="form-input"></div>
                 <div class="modal-actions">
@@ -304,7 +305,7 @@ $pageTitle = 'Packages';
         function openEditModal(pkg) {
             document.getElementById('edit_id').value = pkg.id;
             document.getElementById('edit_name').value = pkg.name;
-            document.getElementById('edit_duration').value = pkg.duration_seconds;
+            document.getElementById('edit_duration').value = 2592000;
             document.getElementById('edit_price').value = pkg.price;
             document.getElementById('edit_bw').value = pkg.bandwidth_mbps || '';
             document.getElementById('edit_quota').value = pkg.data_quota_mb || '';

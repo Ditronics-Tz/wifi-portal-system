@@ -6,6 +6,23 @@
 
 require_once __DIR__ . '/db.php';
 
+// ── Voucher policy caps ─────────────────────────────────────────
+// Every voucher carries BOTH limits: an MB data cap and a fixed 30-day
+// lifetime from first use. Whichever is hit first ends the session.
+// Duration is not a choice: all packages are exactly one month and differ
+// only by MB quota (and price/bandwidth).
+const VOUCHER_MAX_DURATION_SECONDS = 2592000; // 30 days
+const VOUCHER_MIN_DURATION_SECONDS = 60;
+
+/**
+ * An MB cap is mandatory — vouchers without one can never be generated.
+ */
+function validatePackageQuota($dataQuotaMb): void {
+    if ($dataQuotaMb === null || (int) $dataQuotaMb < 1) {
+        throw new Exception('Data quota (MB) is required — every voucher must have an MB limit.');
+    }
+}
+
 // ── Admin CRUD ──────────────────────────────────────────────────
 
 /**
@@ -17,9 +34,9 @@ function createPackage(string $name, int $durationSeconds, float $price, ?int $b
     if ($name === '') {
         throw new Exception('Name is required.');
     }
-    if ($durationSeconds < 60) {
-        throw new Exception('Duration must be at least 60 seconds.');
-    }
+    // Duration is fixed policy, not a choice — ignore the submitted value.
+    $durationSeconds = VOUCHER_MAX_DURATION_SECONDS;
+    validatePackageQuota($dataQuotaMb);
     if ($price < 0) {
         throw new Exception('Invalid price.');
     }
@@ -58,6 +75,14 @@ function createPackage(string $name, int $durationSeconds, float $price, ?int $b
  * Update a package
  */
 function updatePackage(int $id, array $data, ?int $adminUserId = null): bool {
+    // Duration is fixed policy — any submitted value is forced to 30 days.
+    if (array_key_exists('duration_seconds', $data)) {
+        $data['duration_seconds'] = VOUCHER_MAX_DURATION_SECONDS;
+    }
+    if (array_key_exists('data_quota_mb', $data)) {
+        validatePackageQuota($data['data_quota_mb']);
+    }
+
     $db = getDB();
 
     $sets = [];

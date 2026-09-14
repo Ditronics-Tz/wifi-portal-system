@@ -99,7 +99,7 @@ function fmtDuration(int $s): string {
                         <select name="plan" id="plan" class="form-select" required>
                             <option value="">Select a package...</option>
                             <?php foreach ($packages as $pkg): ?>
-                                <option value="<?php echo (int) $pkg['id']; ?>" <?php echo ((int) $planId === (int) $pkg['id']) ? 'selected' : ''; ?>><?php echo htmlspecialchars($pkg['name']); ?> — <?php echo number_format($pkg['price']); ?> TZS (<?php echo fmtDuration((int)$pkg['duration_seconds']); ?>)</option>
+                                <option value="<?php echo (int) $pkg['id']; ?>" <?php echo ((int) $planId === (int) $pkg['id']) ? 'selected' : ''; ?>><?php echo htmlspecialchars($pkg['name']); ?> — <?php echo number_format($pkg['price']); ?> TZS (30 days, <?php echo !empty($pkg['data_quota_mb']) ? number_format($pkg['data_quota_mb']) . ' MB' : 'no quota'; ?>)</option>
                             <?php endforeach; ?>
                         </select>
                     </div>
@@ -128,12 +128,13 @@ function fmtDuration(int $s): string {
                 <?php else: ?>
                 <div class="table-wrapper">
                     <table class="data-table">
-                        <thead><tr><th>Package</th><th>Duration</th><th>Price (TZS)</th><th>Bandwidth</th><th>Description</th></tr></thead>
+                        <thead><tr><th>Package</th><th>Duration</th><th>Data</th><th>Price (TZS)</th><th>Bandwidth</th><th>Description</th></tr></thead>
                         <tbody>
                             <?php foreach ($packages as $pkg): ?>
                             <tr>
                                 <td style="font-weight: 500;"><?php echo htmlspecialchars($pkg['name']); ?></td>
-                                <td><?php echo fmtDuration((int)$pkg['duration_seconds']); ?></td>
+                                <td>30 days</td>
+                                <td><?php echo !empty($pkg['data_quota_mb']) ? number_format($pkg['data_quota_mb']) . ' MB' : '—'; ?></td>
                                 <td style="font-weight: 600; color: var(--color-secondary);"><?php echo number_format($pkg['price']); ?></td>
                                 <td><?php echo $pkg['bandwidth_mbps'] ? $pkg['bandwidth_mbps'] . ' Mbps' : '—'; ?></td>
                                 <td style="color: var(--text-tertiary); font-size: var(--text-sm);"><?php echo htmlspecialchars($pkg['description'] ?? '—'); ?></td>

@@ -119,6 +119,24 @@ Apply the performance indexes once:
 psql -U radius -d radius -f migrations/008_quota_perf.sql
 ```
 
+## Voucher policy: MB cap + one-month max on everything
+
+Every voucher carries **both** limits, whichever hits first ends the session:
+
+- **MB cap** — `data_quota_mb` is mandatory on packages (`validatePackageQuota`).
+  Packages without one cannot generate vouchers until the admin sets an MB limit.
+- **Fixed 30 days** — duration is not a choice: package create/update forces
+  2592000s, with clamps again at voucher generation and at first use, so an
+  untouched MB allowance never extends a voucher past one month from first use.
+  Packages differ only by MB quota (and price/bandwidth).
+
+Repair existing rows once with `migrations/009_policy_caps.sql` (flattens all
+packages, unused vouchers, and active voucher expiry to 30 days; statement 3
+EXTENDS short vouchers already sold — skip it to keep current sessions on
+their sold terms).
+It does not invent MB values: list quota-less packages with the query in the
+migration header and set each MB limit in the admin Packages page.
+
 ## Monitoring
 
 `bin/verify_quota_setup.php` now also reports `quota_hook` install status,

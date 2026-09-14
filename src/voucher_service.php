@@ -72,10 +72,12 @@ function prepareVoucherForAuth(string $code, ?string $clientMac = null, ?string 
             return ['status' => 'expired'];
         }
 
-        // 4. Unused → first use: set timers, open session, bind MAC as a hint
+        // 4. Unused → first use: set timers, open session, bind MAC as a hint.
+        // Lifetime is capped at one month even if the stored duration is longer.
         if ($voucher['status'] === 'unused') {
             $firstUsedAt = date('Y-m-d H:i:s');
-            $expiresAtTs = date('Y-m-d H:i:s', $now + $voucher['duration_seconds']);
+            $effectiveDuration = min((int) $voucher['duration_seconds'], VOUCHER_MAX_DURATION_SECONDS);
+            $expiresAtTs = date('Y-m-d H:i:s', $now + $effectiveDuration);
 
             $stmt = $db->prepare("
                 UPDATE vouchers
@@ -92,7 +94,7 @@ function prepareVoucherForAuth(string $code, ?string $clientMac = null, ?string 
                 ':id'            => $voucher['id'],
             ]);
 
-            applyVoucherRadiusPolicy($code, $voucher['plan_name'], $voucher['duration_seconds']);
+            applyVoucherRadiusPolicy($code, $voucher['plan_name'], $effectiveDuration);
             if ($clientMac) {
                 lockVoucherMacInRadius($code, $clientMac);
             }
@@ -453,6 +455,15 @@ function generateVouchers(string $packageName, int $durationSec, float $price, i
     }
     if ($quantity < 1 || $quantity > 100) {
         throw new Exception('Quantity must be 1-100.');
+    }
+
+    // Policy: no voucher outlives one month, and every voucher needs an MB cap.
+    // Duration is clamped (old packages may still carry longer values); a
+    // missing quota blocks generation until the admin sets an MB limit.
+    $durationSec = min($durationSec, VOUCHER_MAX_DURATION_SECONDS);
+    $quotaPkg = getPackageByName($packageName, true);
+    if (!$quotaPkg || (int) ($quotaPkg['data_quota_mb'] ?? 0) < 1) {
+        throw new Exception("Package '{$packageName}' has no data quota — set an MB limit before generating vouchers.");
     }
 
     // Normalize seller_id: 0 or invalid becomes null

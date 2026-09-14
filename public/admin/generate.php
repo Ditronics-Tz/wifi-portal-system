@@ -198,7 +198,7 @@ $pageTitle = 'Vouchers';
                     <select name="plan" id="plan" class="form-select" required>
                         <option value="">Select a package...</option>
                         <?php foreach ($packages as $pkg): if (!$pkg['is_active']) continue; ?>
-                            <option value="<?php echo (int) $pkg['id']; ?>" <?php echo ((int) $planId === (int) $pkg['id']) ? 'selected' : ''; ?>><?php echo htmlspecialchars($pkg['name']); ?> — <?php echo number_format($pkg['price']); ?> TZS (<?php echo fmtDuration((int)$pkg['duration_seconds']); ?>)</option>
+                            <option value="<?php echo (int) $pkg['id']; ?>" <?php echo ((int) $planId === (int) $pkg['id']) ? 'selected' : ''; ?>><?php echo htmlspecialchars($pkg['name']); ?> — <?php echo number_format($pkg['price']); ?> TZS (30 days, <?php echo !empty($pkg['data_quota_mb']) ? number_format($pkg['data_quota_mb']) . ' MB' : 'no quota — set one first'; ?>)</option>
                         <?php endforeach; ?>
                     </select>
                 </div>

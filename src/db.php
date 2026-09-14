@@ -214,11 +214,13 @@ function createTables(PDO $db): void {
     $db->exec("CREATE INDEX IF NOT EXISTS idx_security_events_voucher ON security_events (voucher_code)");
 
     // ── Seed default packages if empty ───────────────────────────
+    // Fixed 30-day policy: seeds carry the flat duration; the admin must set
+    // each MB quota (and rename packages by allowance) before generating.
     $count = $db->query("SELECT COUNT(*) FROM packages")->fetchColumn();
     if ($count == 0) {
         $defaults = [
-            ['Siku 1', 86400, 500, null, null, 'Mtandao kwa saa 24', 1],
-            ['Wiki 1', 604800, 3000, null, null, 'Mtandao kwa siku 7', 2],
+            ['Siku 1', 2592000, 500, null, null, 'Mtandao kwa siku 30', 1],
+            ['Wiki 1', 2592000, 3000, null, null, 'Mtandao kwa siku 30', 2],
             ['Mwezi 1', 2592000, 10000, null, null, 'Mtandao kwa siku 30', 3],
         ];
         $stmt = $db->prepare("
